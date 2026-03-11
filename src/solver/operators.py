@@ -107,17 +107,19 @@ def repair(
     inst: Instance,
 ) -> None:
     """
-    Repair chromosome to ensure inventory feasibility.
+    Repair chromosome to ensure inventory AND routing feasibility.
 
-    Forward-simulate inventory; whenever I[i,t] < L_min[i],
-    force Y[i,t] = 1 (deliver on that day).
-
-    Also ensures every customer gets at least one delivery.
+    Phase 1: Forward-simulate inventory; whenever I[i,t] < L_min[i],
+             force Y[i,t] = 1 (deliver on that day).
+    Phase 2: Shift-aware load balancing — limit customers per TW shift
+             so TD-Split produces ≤ m routes per shift.
     """
     n, T = inst.n, inst.T
-    max_iterations = 3  # Bounded to prevent infinite loops
+    m = inst.m
 
-    for iteration in range(max_iterations):
+    # --- Phase 1: Fix stockouts (iterate until convergence) ---
+    max_iter_stockout = T * 2
+    for iteration in range(max_iter_stockout):
         I_matrix, q_matrix = simulate_inventory(chrom.Y, inst)
         violations = check_feasibility(I_matrix, inst)
 
@@ -130,8 +132,84 @@ def repair(
     # Ensure every customer has at least one delivery
     for i in range(n):
         if np.sum(chrom.Y[i, :]) == 0:
-            # Find the day with highest demand
             day = int(np.argmax(inst.demand[i, :]))
             chrom.Y[i, day] = 1
+
+    # --- Phase 2: Shift-aware load balancing (multi-pass) ---
+    # Estimate max customers per route from TW width and travel times
+    avg_inter_dist = np.mean(inst.dist[1:, 1:][
+        inst.dist[1:, 1:] > 0
+    ]) if n > 1 else 5.0
+    avg_depot_dist = np.mean(inst.dist[0, 1:]) if n > 0 else 5.0
+    avg_travel = avg_inter_dist / 18.0  # conservative speed estimate
+    depot_travel = avg_depot_dist / 18.0
+    tw_width = 4.0  # typical [8-12] or [14-18]
+    usable_time = max(tw_width - depot_travel, 1.0)
+    per_stop_time = np.mean(inst.s) + avg_travel
+    # Conservative estimate: leave 1-customer buffer per route
+    max_per_route = max(2, int(usable_time / per_stop_time) - 1)
+    max_per_shift = m * max_per_route
+
+    I_matrix, _ = simulate_inventory(chrom.Y, inst)
+
+    # Multiple passes — shifting customers can overload adjacent days
+    for _pass in range(3):
+        any_moved = False
+        for t in range(T):
+            for is_morning in [True, False]:
+                shift_custs = [
+                    c for c in range(n)
+                    if chrom.Y[c, t] == 1
+                    and (inst.e[c] < 13.0) == is_morning
+                ]
+
+                if len(shift_custs) <= max_per_shift:
+                    continue
+
+                # Sort by inventory surplus (descending) — defer those with most buffer
+                surplus = np.array([
+                    (I_matrix[c, t - 1] if t > 0 else inst.I0[c])
+                    - inst.demand[c, t] - inst.L_min[c]
+                    for c in shift_custs
+                ])
+                order = np.argsort(-surplus)
+
+                for idx in order:
+                    # Recount current shift load
+                    current_load = sum(
+                        1 for c in range(n)
+                        if chrom.Y[c, t] == 1
+                        and (inst.e[c] < 13.0) == is_morning
+                    )
+                    if current_load <= max_per_shift:
+                        break
+
+                    c = shift_custs[idx]
+
+                    # Try shifting to adjacent day
+                    for dt in [1, -1, 2, -2]:
+                        t_new = t + dt
+                        if t_new < 0 or t_new >= T:
+                            continue
+                        if chrom.Y[c, t_new] == 1:
+                            continue
+
+                        # Test move
+                        chrom.Y[c, t] = 0
+                        chrom.Y[c, t_new] = 1
+                        I_test, _ = simulate_inventory(chrom.Y, inst)
+                        test_violations = check_feasibility(I_test, inst)
+
+                        if not test_violations:
+                            I_matrix = I_test  # accept
+                            any_moved = True
+                            break
+                        else:
+                            # Revert
+                            chrom.Y[c, t] = 1
+                            chrom.Y[c, t_new] = 0
+
+        if not any_moved:
+            break
 
     chrom._fitness = None

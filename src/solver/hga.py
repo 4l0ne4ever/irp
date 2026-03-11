@@ -49,8 +49,11 @@ class HGA:
         seed: int = 42,
     ):
         self.inst = inst
-        self.pop_size = pop_size
-        self.generations = generations
+        # Adaptive scaling: larger instances need larger populations & more generations
+        # Ref: Vidal et al. (2012), pop ~ O(sqrt(n)), gen ~ O(n)
+        n = inst.n
+        self.pop_size = max(pop_size, min(n * 2, 300))
+        self.generations = max(generations, min(n * 5, 1000))
         self.time_limit = time_limit
         self.use_dynamic = use_dynamic
         self.rng = np.random.default_rng(seed)
@@ -112,6 +115,32 @@ class HGA:
                     f"Feasible: {log_entry['feasible_count']}/{self.pop_size} | "
                     f"Time: {elapsed:.1f}s"
                 )
+
+        # --- Final feasibility guarantee ---
+        if self.best_solution and not self.best_solution.feasible:
+            logger.warning("Best solution infeasible — running feasibility repair...")
+            for _ in range(5):
+                repair(self.best_chrom, self.inst)
+                f, sol = evaluate(self.best_chrom, self.inst, self.use_dynamic)
+                if sol.feasible or f < self.best_fitness:
+                    self.best_fitness = f
+                    self.best_solution = sol
+                if sol.feasible:
+                    break
+
+            # Last resort: generate fresh feasible chromosomes
+            if not self.best_solution.feasible:
+                logger.warning("Repair failed — generating fresh feasible solutions...")
+                for _ in range(self.pop_size):
+                    chrom = random_chromosome(self.inst, self.rng)
+                    repair(chrom, self.inst)
+                    f, sol = evaluate(chrom, self.inst, self.use_dynamic)
+                    if sol.feasible and (not self.best_solution.feasible
+                                         or f < self.best_fitness):
+                        self.best_fitness = f
+                        self.best_chrom = copy_chromosome(chrom)
+                        self.best_solution = sol
+                        break
 
         total_time = time.time() - start_time
         logger.info(

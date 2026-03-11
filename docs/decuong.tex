@@ -1,0 +1,1059 @@
+\documentclass[12pt,a4paper]{article}
+
+% ============================================================
+%  PACKAGES
+% ============================================================
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setmainlanguage{vietnamese}
+\setotherlanguage{english}
+\setmainfont{FreeSerif}[
+  BoldFont = FreeSerifBold,
+  ItalicFont = FreeSerifItalic,
+  BoldItalicFont = FreeSerifBoldItalic
+]
+\setsansfont{FreeSans}
+\setmonofont{FreeMono}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{natbib}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% ============================================================
+%  PAGE SETUP
+% ============================================================
+\geometry{
+  a4paper,
+  top=2.5cm, bottom=2.5cm,
+  left=3.0cm, right=2.5cm
+}
+\setstretch{1.3}
+
+% ============================================================
+%  COLORS
+% ============================================================
+\definecolor{primary}{RGB}{31, 56, 100}
+\definecolor{accent}{RGB}{46, 80, 144}
+\definecolor{lightblue}{RGB}{235, 242, 252}
+\definecolor{lightgreen}{RGB}{235, 252, 238}
+\definecolor{lightyellow}{RGB}{255, 252, 235}
+\definecolor{lightred}{RGB}{255, 240, 240}
+\definecolor{darkgray}{RGB}{80, 80, 80}
+\definecolor{codebg}{RGB}{248, 248, 248}
+
+% ============================================================
+%  SECTION FORMATTING
+% ============================================================
+\titleformat{\section}
+  {\color{primary}\large\bfseries}
+  {\thesection.}{0.6em}{}
+  [\color{accent}\rule{\linewidth}{0.6pt}\vspace{2pt}]
+
+\titleformat{\subsection}
+  {\color{accent}\normalsize\bfseries}
+  {\thesubsection.}{0.5em}{}
+
+\titleformat{\subsubsection}
+  {\color{darkgray}\normalsize\bfseries\itshape}
+  {\thesubsubsection.}{0.5em}{}
+
+% ============================================================
+%  HEADER / FOOTER
+% ============================================================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{darkgray} Đề cương NCKH -- IRP-TW-DT Hà Nội}
+\fancyhead[R]{\small\color{darkgray} \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ============================================================
+%  CUSTOM COMMANDS
+% ============================================================
+\newcommand{\highlight}[1]{\colorbox{lightblue}{\parbox{\dimexpr\linewidth-2\fboxsep}{#1}}}
+\newcommand{\boldterm}[1]{\textbf{\color{primary}#1}}
+\newcommand{\citealias}[1]{\citeauthor{#1} (\citeyear{#1})}
+
+% Math shortcuts
+\newcommand{\T}{\mathcal{T}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\K}{\mathcal{K}}
+\newcommand{\V}{\mathcal{V}}
+\newcommand{\A}{\mathcal{A}}
+\newcommand{\vij}[1]{v_{ij}^{(#1)}}
+\newcommand{\tij}{\tau_{ij}}
+
+% ============================================================
+%  DOCUMENT
+% ============================================================
+\begin{document}
+
+% ============================================================
+%  TITLE PAGE
+% ============================================================
+\begin{titlepage}
+\begin{center}
+  \vspace*{1.0cm}
+
+  {\small\scshape Trường Đại học Bách Khoa Hà Nội}\\[0.3cm]
+  {\small\scshape Viện Toán ứng dụng và Tin học -- Khoa Khoa học Máy tính}\\[1.0cm]
+
+  \rule{\linewidth}{1.5pt}\\[0.4cm]
+
+  {\LARGE\bfseries\color{primary}
+    ĐỀ CƯƠNG NGHIÊN CỨU KHOA HỌC}\\[0.6cm]
+
+  {\large\bfseries\color{accent}
+    TỐI ƯU HÓA HỆ THỐNG GIAO HÀNG CHẶNG CUỐI TRONG \\
+    LOGISTICS ĐÔ THỊ BẰNG MÔ HÌNH INVENTORY ROUTING\\
+    PROBLEM KẾT HỢP KHUNG THỜI GIAN VÀ\\
+    GIAO THÔNG ĐỘNG}\\[0.4cm]
+
+  {\normalsize\itshape\color{darkgray}
+    (IRP with Time Windows and Dynamic Traffic -- IRP-TW-DT)}\\[0.2cm]
+
+  \rule{\linewidth}{1.5pt}\\[1.5cm]
+
+  \begin{flushleft}
+    \begin{tabular}{@{}ll}
+      \textbf{Sinh viên thực hiện:}  &  \\[4pt]
+      \textbf{Mã sinh viên:}          & [Mã SV] \\[4pt]
+      \textbf{Giảng viên hướng dẫn:} & [Tên Giảng viên] \\[4pt]
+      \textbf{Chuyên ngành:}          & Khoa học Máy tính / \\
+                                      & Operations Research \& Logistics Optimization \\[4pt]
+      \textbf{Năm học:}               & 2025--2026 \\
+    \end{tabular}
+  \end{flushleft}
+
+  \vfill
+  {\normalsize\itshape Hà Nội, Tháng 3 Năm 2026}
+\end{center}
+\end{titlepage}
+
+% ============================================================
+%  TABLE OF CONTENTS
+% ============================================================
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Giới thiệu và Tính cấp thiết}
+% ============================================================
+
+Trong chuỗi cung ứng hiện đại, chi phí logistics chặng cuối (\textit{last-mile delivery})
+thường chiếm tỷ trọng lên tới 40--50\% tổng chi phí vận chuyển \citep{gevaers2011characterization},
+và có thể vượt quá 50\% trong các thị trường châu Á--Thái Bình Dương có mật độ đô thị cao
+\citep{fedex2024apac}. Tại bối cảnh Việt Nam, chi phí logistics chiếm khoảng 25\% GDP ---
+cao hơn đáng kể so với mức 15\% ở các nước phát triển \citep{amr2022vietnam}.
+Tại Hà Nội --- đô thị hơn 8 triệu dân với đặc trưng giao thông hỗn hợp và mật độ xe
+máy cực cao --- thách thức vận tải càng được khuếch đại. Theo TomTom Traffic Index 2025
+\citep{tomtom2025hanoi}, mức độ tắc nghẽn trung bình cả ngày tại Hà Nội đạt 49,2\%
+(tức hành trình thực tế dài hơn điều kiện lý tưởng gần 50\%); riêng giờ cao điểm sáng
+tốc độ trung bình chỉ đạt 15,3~km/h và giờ cao điểm chiều còn tệ hơn với 13,6~km/h.
+
+Hầu hết các doanh nghiệp logistics Việt Nam hiện đang vận hành theo mô hình
+\boldterm{Retailer Managed Inventory (RMI)}: khách hàng tự đặt hàng khi tồn kho cạn,
+và đội xe phản ứng theo yêu cầu. Cách tiếp cận này dẫn đến hai hệ quả bất lợi đồng thời:
+(1)~chuyến giao thường bị buộc vào những khung giờ kém linh hoạt, thường trùng với giờ
+cao điểm; (2)~không tận dụng được việc tổng hợp nhiều đơn hàng nhỏ thành một chuyến
+tối ưu.
+
+Bài toán \boldterm{Inventory Routing Problem (IRP)} được đề xuất như giải pháp căn bản:
+thay vì để khách hàng tự quản lý tồn kho, nhà cung cấp chủ động quyết định \textit{giao
+cho ai, giao bao nhiêu và đi theo lộ trình nào} trên chân trời kế hoạch nhiều ngày.
+IRP là sự tích hợp giữa quản lý tồn kho và bài toán định tuyến phương tiện có ràng buộc
+(CVRP), thuộc lớp NP-Hard \citep{coelho2014thirty}.
+
+Tuy nhiên, tuyệt đại đa số các mô hình IRP trong văn học hiện tại giả định thời gian
+di chuyển là hằng số. \citealias{touzout2022assign} là nhóm đầu tiên đề xuất mô hình
+IRP với thời gian di chuyển phụ thuộc thời điểm xuất phát (TD-IRP), nhưng công trình
+này chưa tích hợp ràng buộc khung thời gian phục vụ (\textit{time windows}) và chưa
+được kiểm chứng trong bối cảnh đô thị châu Á với đặc trưng giao thông riêng biệt.
+
+Nghiên cứu này đề xuất mô hình \boldterm{IRP-TW-DT} (IRP with Time Windows and Dynamic
+Traffic) --- mở rộng của TD-IRP với bốn đóng góp cụ thể:
+
+\begin{enumerate}[leftmargin=*, label=(\arabic*)]
+  \item Mô hình hóa giao thông động Hà Nội bằng \textit{piecewise constant speed function}
+        đảm bảo tính chất FIFO, calibrate theo múi giờ thực tế của thành phố;
+  \item Tích hợp \textit{time windows} $[e_{it}, l_{it}]$ cho từng khách hàng trong
+        từng ngày, phản ánh thực tế vận hành của các cửa hàng và đại lý đô thị;
+  \item Thiết kế thuật toán \textit{Hybrid Genetic Algorithm} (HGA) với cơ chế mã hóa
+        hai tầng (Two-part Chromosome) và toán tử \textit{Time-Shift} mới;
+  \item Đánh giá định lượng sự đánh đổi giữa chi phí lưu kho và chi phí vận tải dưới
+        tác động của giao thông động trong môi trường đô thị.
+\end{enumerate}
+
+% ============================================================
+\section{Tổng quan tài liệu}
+% ============================================================
+
+\subsection{Bài toán Inventory Routing Problem (IRP)}
+
+Bài toán IRP có nguồn gốc từ mô hình phân phối khí công nghiệp của Bell et al. (1983)
+và được tổng hợp toàn diện bởi \citealias{coelho2014thirty} trong 30 năm phát triển.
+IRP tìm kiếm chính sách phân phối tối ưu theo mô hình
+\boldterm{Vendor Managed Inventory (VMI)}: nhà cung cấp quản lý tồn kho tại khách hàng
+và tự quyết định thời điểm, số lượng giao hàng. \citealias{archetti2016vmi} chứng minh
+rằng VMI có thể tiết kiệm trung bình 24\% so với RMI, song kết quả này dựa trên giả
+định thời gian di chuyển hằng số.
+
+Các phương pháp giải chính xác (Branch-and-Cut, Branch-and-Price) như của
+\citealias{archetti2007branch} và \citealias{desaulniers2016branch} chỉ giải quyết
+hiệu quả các instance dưới 30 khách hàng. Đối với quy mô lớn hơn, các Metaheuristic
+như Large Neighborhood Search (LNS) hay HGA được ưu tiên
+\citep{bouvier2024continent, adulyasak2014branch}.
+
+\subsection{Bài toán Định tuyến Phụ thuộc Thời gian (TDVRP)}
+
+\citealias{ichoua2003vehicle} đề xuất mô hình tốc độ hằng từng đoạn (\textit{piecewise
+constant speed function}) cho TDVRP. Mô hình IGP chia ngày thành $S$ khoảng thời gian
+$[a_s, a_{s+1})$, mỗi khoảng gán một tốc độ hằng $v^{(s)}$ cho mọi cung trên đồ thị.
+\citealias{ghiani2014note} chứng minh rằng mô hình này là trường hợp tổng quát của
+mọi hàm di chuyển tuyến tính từng đoạn thỏa mãn tính chất FIFO và hiện là tiêu chuẩn
+de-facto trong toàn bộ văn học TDVRP hiện đại \citep{adamo2024review}.
+
+Trong bối cảnh đô thị, \citealias{rifki2020impact} chứng minh sự granularity theo cả
+không gian lẫn thời gian của dữ liệu traffic ảnh hưởng đáng kể đến chất lượng lời giải,
+nhấn mạnh tầm quan trọng của việc calibrate mô hình từ dữ liệu thực địa.
+
+\subsection{Bài toán IRP Phụ thuộc Thời gian (TD-IRP)}
+
+Đây là hướng nghiên cứu mới nhất và trực tiếp liên quan đến đề tài. Bảng~\ref{tab:related}
+tổng hợp các công trình nổi bật.
+
+\begin{table}[htbp]
+\centering
+\caption{Các công trình IRP liên quan đến giao thông động}
+\label{tab:related}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabularx}{\linewidth}{@{}l l l c c c c@{}}
+\toprule
+\textbf{Tác giả} & \textbf{Tạp chí} & \textbf{Năm} &
+\textbf{TD} & \textbf{TW} & \textbf{Đa xe} & \textbf{Metah.} \\
+\midrule
+Archetti et al.       & Transp. Sci.    & 2007 & -- & -- & \checkmark & -- \\
+Coelho et al.         & Transp. Sci.    & 2014 & -- & -- & \checkmark & \checkmark \\
+Touzout et al.        & EJOR            & 2022 & \checkmark & -- & \checkmark & \checkmark \\
+Skålnes et al.        & EJOR            & 2022 & -- & -- & \checkmark & -- \\
+Bouvier et al.        & Transp. Sci.    & 2024 & -- & -- & \checkmark & \checkmark \\
+Skålnes et al.        & EJOR            & 2024 & -- & -- & \checkmark & \checkmark \\
+\midrule
+\rowcolor{lightblue}
+\textbf{Đề tài này}   & --              & 2026 & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabularx}
+\vspace{3pt}
+\small\textit{TD: Time-Dependent travel time; TW: Time Windows; Metah.: Metaheuristic}
+\end{table}
+
+\boldterm{Touzout et al. (2022) \citep{touzout2022assign}} --- công trình quan trọng nhất
+cần làm rõ vị thế của đề tài --- đề xuất mô hình TD-IRP và thuật toán Matheuristic hai
+pha (phân công khách hàng trước, định tuyến sau) được thử nghiệm trên bộ dữ liệu thực
+từ thành phố Lyon, Pháp. Tuy nhiên, công trình này có ba giới hạn chính:
+
+\begin{enumerate}[leftmargin=*, label=(\arabic*)]
+  \item \textit{Không có time windows}: Touzout et al. không ràng buộc khung giờ nhận hàng
+        cho khách --- một thực tế phổ biến trong logistics đô thị.
+  \item \textit{Bối cảnh đô thị châu Âu}: Profile giao thông Lyon, Pháp khác biệt căn bản
+        so với Hà Nội (mạng lưới đường, mật độ xe máy, đặc trưng giờ cao điểm kép).
+  \item \textit{Thuật toán Matheuristic (Tabu + MIP)}: Đề tài này đóng góp một thuật toán
+        hoàn toàn khác là HGA với Two-part Chromosome và toán tử Time-Shift mới.
+\end{enumerate}
+
+\subsection{Khoảng trống Nghiên cứu}
+
+Qua tổng quan tài liệu, tồn tại một khoảng trống nghiên cứu được xác định rõ:
+
+\begin{center}
+\setlength{\fboxsep}{10pt}
+\fbox{\begin{minipage}{0.92\linewidth}
+\textbf{Chưa tồn tại mô hình IRP-TW-DT:} Mặc dù \citealias{touzout2022assign} đã xây
+dựng nền tảng TD-IRP, sự kết hợp của \emph{(i)}~time windows, \emph{(ii)}~profile giao
+thông đô thị nhiều đỉnh calibrate từ dữ liệu thực, và \emph{(iii)}~thuật toán HGA với
+cơ chế tối ưu theo chiều thời gian chưa từng được nghiên cứu. Đặc biệt, chưa có công
+trình nào định lượng sự đánh đổi giữa chi phí lưu kho và chi phí vận tải dưới tác động
+của giao thông động khi chuyển đổi từ RMI sang VMI.
+\end{minipage}}
+\end{center}
+
+% ============================================================
+\section{Câu hỏi nghiên cứu}
+% ============================================================
+
+\begin{enumerate}[leftmargin=*, label=\textbf{Q\arabic{*}.}, itemsep=6pt]
+  \item Giao thông đô thị phụ thuộc thời gian ảnh hưởng như thế nào đến sự đánh đổi
+        giữa chi phí tồn kho và chi phí vận tải trong bài toán IRP?
+
+  \item Thuật toán HGA với cấu trúc Two-part Chromosome (Allocation + Routing)
+        có thể đồng thời tối ưu hóa quyết định tồn kho và lịch định tuyến
+        trong khung IRP-TW-DT không?
+
+  \item Time-Shift neighborhood search cải thiện chất lượng lời giải như thế nào
+        so với HGA không có local search trên trục thời gian?
+
+  \item Mô hình IRP-TW-DT tiết kiệm được bao nhiêu phần trăm tổng chi phí so với
+        các baseline (Periodic Delivery, RMI) trên bộ dữ liệu mô phỏng Hà Nội?
+\end{enumerate}
+
+% ============================================================
+\section{Mục tiêu nghiên cứu}
+% ============================================================
+
+\begin{enumerate}[leftmargin=*, label=\textbf{M\arabic*}.\ , itemsep=8pt]
+  \item \boldterm{Mục tiêu mô hình hóa:}
+    Xây dựng mô hình MILP cho bài toán IRP-TW-DT đa chu kỳ, trong đó thời gian di
+    chuyển phụ thuộc thời điểm xuất phát theo profile giao thông Hà Nội 5 múi giờ.
+    Đảm bảo tính chất FIFO theo chuẩn \citep{ichoua2003vehicle}.
+
+  \item \boldterm{Mục tiêu thuật toán:}
+    Thiết kế HGA với cơ chế mã hóa Two-part Chromosome và toán tử Time-Shift để giải
+    IRP-TW-DT trong thời gian khả thi; đồng thời validate HGA trên bộ benchmark chuẩn
+    của \citealias{archetti2007branch}.
+
+  \item \boldterm{Mục tiêu thực nghiệm:}
+    Đánh giá và so sánh bốn kịch bản (Periodic / RMI / IRP-TW-Static / IRP-TW-DT)
+    trên bộ dữ liệu mô phỏng mạng lưới phân phối Hà Nội (quy mô 20, 50, 100 khách
+    hàng, 5 seeds) nhằm rút ra hàm ý quản trị cho doanh nghiệp logistics Việt Nam.
+\end{enumerate}
+
+% ============================================================
+\section{Mô hình Toán học của bài toán IRP-TW-DT}
+% ============================================================
+
+\subsection{Mô hình Giao thông Động (Traffic Model)}
+
+\subsubsection{Piecewise Constant Speed Function (IGP Model)}
+
+Theo chuẩn \citep{ichoua2003vehicle, ghiani2014note}, ngày được chia thành $S$ khoảng
+thời gian (\textit{time zones}) $[a_1, a_2), [a_2, a_3), \ldots, [a_S, a_{S+1})$ với
+$a_1 = 0$ (0h) và $a_{S+1} = H$ (24h). Tốc độ di chuyển trên mọi cung là hằng số
+trong mỗi khoảng:
+
+\begin{equation}
+  v^{(s)} = \text{tốc độ } [\text{km/h}] \text{ trong khoảng } [a_s, a_{s+1}),
+  \quad s = 1, \ldots, S
+\end{equation}
+
+\noindent Bảng~\ref{tab:speed} trình bày profile 5 múi giờ calibrate theo đặc trưng
+Hà Nội (cần validate bằng dữ liệu thực, ví dụ: Google Maps Distance Matrix API hoặc
+báo cáo của TEDI/TomTom).
+
+\begin{table}[htbp]
+\centering
+\caption{Profile giao thông Hà Nội --- Piecewise Constant Speed (hiệu chỉnh từ TomTom 2025)}
+\label{tab:speed}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}c c c c@{}}
+\toprule
+\textbf{Zone} & \textbf{Múi giờ} & \textbf{Tốc độ $v^{(s)}$ (km/h)} &
+\textbf{Nhận xét} \\
+\midrule
+1 & $[0\text{h},\ 6\text{h})$    & 27 & Đêm, giao thông thưa \\
+2 & $[6\text{h},\ 9\text{h})$    & 15 & Cao điểm sáng \\
+3 & $[9\text{h},\ 17\text{h})$   & 19 & Hành chính \\
+4 & $[17\text{h},\ 19\text{h})$  & 14 & Cao điểm chiều (nặng nhất) \\
+5 & $[19\text{h},\ 24\text{h})$  & 21 & Tối, giao thông dịu \\
+\bottomrule
+\end{tabular}
+\vspace{4pt}
+\begin{minipage}{0.9\linewidth}
+\small\textit{Nguồn: Hiệu chỉnh từ TomTom Traffic Index 2025 \citep{tomtom2025hanoi} ---
+dữ liệu thực tế: tốc độ giờ cao điểm sáng 15,3~km/h, chiều 13,6~km/h; thời gian di chuyển
+trung bình 10~km là 33~phút 20~giây. Các giá trị trong bảng là ước tính tốt nhất từ
+dữ liệu công khai; cần hiệu chỉnh lại bằng dữ liệu GPS thực địa hoặc Google Maps
+Distance Matrix API trước khi sử dụng trong thực nghiệm chính thức.}
+\end{minipage}
+\end{table}
+
+\subsubsection{Tính toán Thời gian Di chuyển và Tính chất FIFO}
+
+Thời gian di chuyển $\tij(\tau)$ từ điểm $i$ đến điểm $j$ khi xuất phát lúc $\tau$
+được tính bằng thuật toán tích phân rời rạc qua các time zones:
+
+\begin{equation}
+  \tij(\tau) = \int_{\tau}^{\tau + \tij(\tau)} \frac{d_{ij}}{v(\xi)} \, d\xi
+  \label{eq:travel_time}
+\end{equation}
+
+\noindent Trong thực tế, với speed function bậc thang, phương trình (\ref{eq:travel_time})
+được giải bằng cách cộng dồn quãng đường qua từng zone:
+
+\begin{equation}
+  \tij(\tau) = \sum_{s=s_\tau}^{S} \min\!\left(\frac{r_s}{v^{(s)}},\,
+                                    a_{s+1} - \max(\tau, a_s)\right)
+  \label{eq:tt_discrete}
+\end{equation}
+
+\noindent trong đó $r_s$ là khoảng cách còn lại khi xe bước vào zone $s$, và $s_\tau$
+là zone chứa $\tau$. Mô hình IGP đảm bảo tính chất FIFO: với mọi $\tau_1 < \tau_2$,
+luôn có $\tau_1 + \tij(\tau_1) \leq \tau_2 + \tij(\tau_2)$
+\citep{ghiani2014note}.
+
+\subsection{Ký hiệu và Tập hợp}
+
+\begin{description}[leftmargin=3cm, labelwidth=2.5cm, font=\normalfont\bfseries]
+  \item[$\T = \{1,\ldots,T\}$] Tập các chu kỳ (ngày) trong chân trời kế hoạch.
+  \item[$\N' = \{1,\ldots,n\}$] Tập khách hàng. Node $0$ là depot.
+  \item[$\V = \N' \cup \{0\}$] Tập tất cả các điểm.
+  \item[$\A$] Tập các cung $(i,j)$ với $i \neq j$, $i,j \in \V$.
+  \item[$\K = \{1,\ldots,m\}$] Tập phương tiện đồng nhất.
+\end{description}
+
+\subsection{Tham số}
+
+\begin{description}[leftmargin=4cm, labelwidth=3.5cm, font=\normalfont\itshape]
+  \item[$h_i$] Chi phí lưu kho đơn vị tại khách hàng $i$ (đ/đv/ngày).
+  \item[$U_i$] Dung tích kho tối đa tại $i$.
+  \item[$L_i^{\min}$] Mức tồn kho an toàn tối thiểu tại $i$.
+  \item[$I_{i0}$] Tồn kho ban đầu tại $i$.
+  \item[$d_{it}$] Nhu cầu tiêu thụ tất định của khách $i$ trong ngày $t$.
+  \item[$Q$] Tải trọng xe (đội xe đồng nhất).
+  \item[$e_i,\ l_i$] Cận dưới và cận trên của khung thời gian phục vụ tại khách $i$
+                      (giờ trong ngày; giống nhau mọi ngày --- giả định tiêu chuẩn).
+  \item[$s_i$] Thời gian phục vụ (bốc xếp hàng) tại điểm $i$ (giờ); $s_i = 0.25$h
+               (15 phút) cho mọi khách trong thực nghiệm.
+  \item[$d_{ij}$] Khoảng cách Euclidean giữa điểm $i$ và $j$ (km).
+  \item[$\tij(\tau)$] Thời gian di chuyển từ $i$ đến $j$ khi xuất phát lúc $\tau$ (giờ).
+  \item[$c_d$] Chi phí đơn vị theo khoảng cách (đ/km).
+  \item[$c_t$] Chi phí đơn vị theo thời gian (đ/giờ; lương lái xe + nhiên liệu theo giờ).
+  \item[$M$] Hằng số Big-M đủ lớn.
+\end{description}
+
+\subsection{Biến quyết định}
+
+\begin{description}[leftmargin=4cm, labelwidth=3.5cm, font=\normalfont\itshape]
+  \item[$I_{it} \geq 0$] Mức tồn kho tại khách $i$ cuối ngày $t$.
+  \item[$q_{ikt} \geq 0$] Lượng hàng giao cho khách $i$ bởi xe $k$ trong ngày $t$.
+  \item[$x_{ijkt} \in \{0,1\}$] 1 nếu xe $k$ đi từ $i$ đến $j$ trong ngày $t$.
+  \item[$z_{ikt} \in \{0,1\}$] 1 nếu xe $k$ ghé thăm khách $i$ trong ngày $t$.
+  \item[$w_{ikt} \geq 0$] Thời điểm xe $k$ bắt đầu phục vụ tại $i$ ngày $t$
+                           (với $i \in \N'$).
+  \item[$w_{0kt} \geq 0$] Thời điểm xe $k$ xuất phát từ depot trong ngày $t$,
+                           $w_{0kt} \leq H$ (biến tự do, không bị ràng buộc time window).
+\end{description}
+
+\subsection{Hàm mục tiêu}
+
+Tối thiểu hóa tổng chi phí, bao gồm ba thành phần riêng biệt:
+
+\begin{equation}
+  \min\ Z = \underbrace{\sum_{t \in \T} \sum_{i \in \N'} h_i \cdot I_{it}}_{\text{Chi phí lưu kho}}
+        + \underbrace{\sum_{t \in \T} \sum_{k \in \K} \sum_{(i,j) \in \A}
+                c_d \cdot d_{ij} \cdot x_{ijkt}}_{\text{Chi phí khoảng cách}}
+        + \underbrace{\sum_{t \in \T} \sum_{k \in \K} \sum_{(i,j) \in \A}
+                c_t \cdot \tij(w_{ikt}) \cdot x_{ijkt}}_{\text{Chi phí thời gian động}}
+  \label{eq:obj}
+\end{equation}
+
+\noindent
+\textbf{Lưu ý về tính phi tuyến (quan trọng):} Thành phần $c_t \cdot \tij(w_{ikt}) \cdot x_{ijkt}$
+là tích của biến nhị phân $x_{ijkt}$, biến liên tục $w_{ikt}$, và hàm phi tuyến bậc thang
+$\tij(\cdot)$. Do đó, bài toán IRP-TW-DT \textit{về nguyên tắc là MINLP} (Mixed Integer
+Nonlinear Program), không phải MILP thuần. Trong nghiên cứu này, tính phi tuyến được xử lý
+theo hai cách tùy mục đích:
+\begin{enumerate}[noitemsep, label=(\roman*)]
+  \item \textit{Trong HGA}: $\tij(\tau)$ được tính trực tiếp bằng thuật toán IGP --- không
+        cần linearization.
+  \item \textit{Trong MILP lower bound (validation)}: Precompute lookup table $\hat{\tau}_{ij}^{(s)}$
+        cho 3 slot xuất phát cố định $\{6\text{h}, 9\text{h}, 19\text{h}\}$, chọn slot tốt
+        nhất trước khi giải. Kết quả là MILP tuyến tính có thể giải bằng HiGHS.
+\end{enumerate}
+Việc tách routing thành \textit{distance cost} và \textit{time-dependent cost} cũng cho
+phép phân tích độc lập tác động của giao thông động.
+
+\subsection{Các ràng buộc}
+
+\subsubsection{Ràng buộc tồn kho}
+
+\begin{align}
+  I_{it} &= I_{i,t-1} - d_{it} + \sum_{k \in \K} q_{ikt}
+             \quad \forall i \in \N',\ t \in \T
+             \label{eq:inv_balance} \\
+  L_i^{\min} &\leq I_{it} \leq U_i
+             \quad \forall i \in \N',\ t \in \T
+             \label{eq:inv_bounds} \\
+  q_{ikt} &\leq (U_i - I_{i,t-1}) \cdot z_{ikt}
+             \quad \forall i \in \N',\ k \in \K,\ t \in \T
+             \label{eq:order_up} \\
+  q_{ikt} &\geq 0
+             \quad \forall i \in \N',\ k \in \K,\ t \in \T
+             \label{eq:q_nonneg}
+\end{align}
+
+\noindent Ràng buộc (\ref{eq:inv_balance}) là phương trình cân bằng tồn kho.
+(\ref{eq:inv_bounds}) đảm bảo tồn kho nằm trong khoảng an toàn.
+(\ref{eq:order_up}) thực thi chính sách \textit{Order-up-to-level (OU)}: lượng giao
+không vượt dung lượng trống của kho.
+
+\subsubsection{Ràng buộc tải trọng xe}
+
+\begin{equation}
+  \sum_{i \in \N'} q_{ikt} \leq Q \quad \forall k \in \K,\ t \in \T
+  \label{eq:capacity}
+\end{equation}
+
+\subsubsection{Ràng buộc định tuyến (Flow Conservation)}
+
+\begin{align}
+  \sum_{j \in \V,\, j \neq i} x_{ijkt} &= z_{ikt}
+    \quad \forall i \in \N',\ k \in \K,\ t \in \T
+    \label{eq:flow_out} \\
+  \sum_{j \in \V,\, j \neq i} x_{jikt} &= z_{ikt}
+    \quad \forall i \in \N',\ k \in \K,\ t \in \T
+    \label{eq:flow_in} \\
+  \sum_{j \in \N'} x_{0jkt} &\leq 1
+    \quad \forall k \in \K,\ t \in \T
+    \label{eq:depot_out}
+\end{align}
+
+\subsubsection{Ràng buộc khung thời gian và giao thông động}
+
+\begin{align}
+  w_{jkt} &\geq w_{ikt} + s_i + \tij(w_{ikt}) - M(1 - x_{ijkt})
+    \quad \forall (i,j) \in \A,\ k \in \K,\ t \in \T
+    \label{eq:time_prop} \\
+  e_i \cdot z_{ikt} &\leq w_{ikt}
+    \quad \forall i \in \N',\ k \in \K,\ t \in \T
+    \label{eq:tw_lb} \\
+  w_{ikt} &\leq l_i \cdot z_{ikt} + M(1 - z_{ikt})
+    \quad \forall i \in \N',\ k \in \K,\ t \in \T
+    \label{eq:tw_ub}
+\end{align}
+
+\noindent Ràng buộc (\ref{eq:time_prop}) lan truyền thời gian phục vụ theo travel time
+phụ thuộc thời điểm; $w_{0kt}$ là biến tự do đại diện cho giờ xuất phát từ depot.
+(\ref{eq:tw_lb})--(\ref{eq:tw_ub}) đảm bảo xe chỉ phục vụ trong khung giờ $[e_i, l_i]$:
+khi $z_{ikt}=0$ (không ghé), $w_{ikt}$ không bị ràng buộc; khi $z_{ikt}=1$, buộc
+$e_i \leq w_{ikt} \leq l_i$. Lưu ý: $\tij(w_{ikt})$ phi tuyến --- xem xử lý ở mục
+\textit{Hàm mục tiêu}.
+
+\subsubsection{Loại bỏ chu trình con (Subtour Elimination)}
+
+\begin{equation}
+  \sum_{i \in S} \sum_{j \in S,\, j \neq i} x_{ijkt} \leq |S| - 1
+  \quad \forall S \subseteq \N',\ 2 \leq |S| \leq |\N'|,\ k \in \K,\ t \in \T
+  \label{eq:sec}
+\end{equation}
+
+\noindent Hoặc thay bằng MTZ constraints để giảm số ràng buộc.
+
+\subsubsection{Tính nguyên và không âm}
+
+\begin{equation}
+  x_{ijkt} \in \{0,1\},\quad z_{ikt} \in \{0,1\},\quad
+  I_{it} \geq 0,\quad q_{ikt} \geq 0,\quad w_{ikt} \geq 0,\quad 0 \leq w_{0kt} \leq H
+  \label{eq:integrality}
+\end{equation}
+
+% ============================================================
+\section{Phương pháp Giải --- Hybrid Genetic Algorithm (HGA)}
+% ============================================================
+
+\subsection{Tổng quan Kiến trúc}
+
+IRP-TW-DT là bài toán NP-Hard với không gian tìm kiếm tổ hợp nổ theo hàm mũ.
+Thuật toán HGA được thiết kế lại từ cơ chế HGA-CVRPTW của tác giả
+(khóa luận trước), bổ sung hai thành phần mới cốt lõi:
+
+\begin{itemize}[leftmargin=*]
+  \item \boldterm{Two-part Chromosome}: Mã hóa đồng thời quyết định tồn kho (ma trận
+        phân bổ $\mathbf{Y}$) và quyết định định tuyến (chuỗi Giant Tour).
+  \item \boldterm{Time-Shift Operator}: Local search trên trục thời gian, dời ngày giao
+        của một khách hàng sang ngày có chi phí vận tải thấp hơn mà không vi phạm tồn kho.
+\end{itemize}
+
+\subsection{Mã hóa Nghiệm Hai tầng (Two-part Chromosome)}
+
+\begin{equation}
+  \text{Chromosome} = \left(\underbrace{\mathbf{Y}_{n \times T}}_{\text{Tầng 1: Allocation}},\ 
+                             \underbrace{\boldsymbol{\pi}_{1 \times n}}_{\text{Tầng 2: Giant Tour}}\right)
+\end{equation}
+
+\begin{description}[leftmargin=0cm]
+  \item[\textbf{Tầng 1 --- Allocation Matrix} $\mathbf{Y} \in \{0,1\}^{n \times T}$:]
+    $Y_{it} = 1$ khi khách hàng $i$ được giao hàng vào ngày $t$.
+    Lượng hàng tự động được tính theo chính sách OU: $q_{it} = U_i - I_{i,t-1}$.
+
+  \item[\textbf{Tầng 2 --- Giant Tour} $\boldsymbol{\pi}$:]
+    Hoán vị của $n$ khách hàng, xác định thứ tự ưu tiên tương đối khi định tuyến.
+    Trong mỗi ngày $t$, tập $\{i : Y_{it} = 1\}$ được sắp xếp theo thứ tự của
+    $\boldsymbol{\pi}$ rồi đưa vào TD-Split Algorithm.
+\end{description}
+
+\subsection{TD-Split Algorithm --- Giải mã và Phân chia Lộ trình}
+
+Với mỗi ngày $t$, chuỗi khách hàng được giao trong ngày đó (ký hiệu $D_t$, sắp xếp
+theo Giant Tour) được phân chia thành các route $R_k$ bằng thuật toán quy hoạch động:
+
+\begin{equation}
+  V[j] = \min_{i \leq j} \left\{ V[i-1] + C_t(i, j) \right\}
+  \quad \forall j = 1, \ldots, |D_t|
+\end{equation}
+
+\noindent trong đó $C_t(i,j)$ là chi phí của route phục vụ các khách hàng từ $D_t[i]$
+đến $D_t[j]$ trong ngày $t$. Chi phí này được tính theo hàm mục tiêu (\ref{eq:obj})
+sử dụng travel time $\tij(\cdot)$ từ mô hình IGP.
+
+\boldterm{Lựa chọn giờ xuất phát:} Để khai thác giao thông động, mỗi ngày, bộ giải thử
+3 phương án giờ xuất phát từ depot: $\{6\text{h},\ 9\text{h},\ 19\text{h}\}$ và chọn
+phương án có tổng chi phí routing thấp nhất.
+
+\subsection{Toán tử Tiến hóa (Evolutionary Operators)}
+
+\begin{description}[leftmargin=0cm, itemsep=6pt]
+  \item[\textbf{Lai ghép (Crossover):}]
+    \begin{itemize}[noitemsep]
+      \item \textit{Tầng 1}: Uniform Crossover trên ma trận $\mathbf{Y}$.
+      \item \textit{Tầng 2}: Order Crossover (OX) trên Giant Tour $\boldsymbol{\pi}$.
+    \end{itemize}
+
+  \item[\textbf{Đột biến (Mutation):}]
+    \begin{itemize}[noitemsep]
+      \item \textit{Tầng 1}: Lật ngẫu nhiên một số bit trong $\mathbf{Y}$, sau đó
+            kiểm tra và sửa nếu có khách bị stock-out.
+      \item \textit{Tầng 2}: Swap Mutation hoặc Inversion Mutation trên $\boldsymbol{\pi}$.
+    \end{itemize}
+
+  \item[\textbf{Repair Operator:}]
+    Sau mỗi phép biến đổi, kiểm tra $I_{it} \geq L_i^{\min}$ cho mọi $(i,t)$.
+    Nếu vi phạm, buộc $Y_{it} = 1$ và cập nhật lại $q_{it}$.
+\end{description}
+
+\subsection{Tìm kiếm Cục bộ (Local Search)}
+
+\begin{description}[leftmargin=0cm, itemsep=6pt]
+  \item[\textbf{2-opt (Không gian):}]
+    Áp dụng đổi chỗ 2 cung liên tiếp để cải thiện từng route trong mỗi ngày.
+    Sử dụng cơ chế đánh giá nhanh của \citealias{visser2020efficient}.
+
+  \item[\textbf{Time-Shift Neighborhood Search (Thời gian) --- Đóng góp chính:}]
+    Với mỗi khách hàng $i$ đang được giao vào ngày $t$, thử dời sang ngày $t'$:
+    \begin{itemize}[noitemsep]
+      \item Tạo $\mathbf{Y}'$: xóa $Y_{it} \leftarrow 0$, đặt $Y_{it'} \leftarrow 1$.
+      \item Kiểm tra tính khả thi: $I_{it''} \geq L_i^{\min}$ với mọi $t''$ bị ảnh hưởng.
+      \item Nếu khả thi và $Z(\mathbf{Y}') < Z(\mathbf{Y})$: chấp nhận thay đổi.
+    \end{itemize}
+    Time-Shift neighborhood search cho phép dồn giao hàng sang các ngày có giao thông
+    thuận lợi, trực tiếp tối ưu hóa trade-off giữa chi phí lưu kho và chi phí vận tải.
+\end{description}
+
+\subsection{Hàm Thích nghi (Fitness Function)}
+
+\begin{equation}
+  F(\text{chrom}) = Z(\text{chrom})
+                    + \lambda_1 \cdot P_{\text{stock-out}}
+                    + \lambda_2 \cdot P_{\text{capacity}}
+                    + \lambda_3 \cdot P_{\text{TW}}
+\end{equation}
+
+\noindent Trong đó $P_{\cdot}$ là hàm phạt, $\lambda_1 \gg \lambda_2 > \lambda_3 > 0$.
+Lời giải với penalty $> 0$ được coi là bất khả thi và được xếp sau lời giải khả thi
+bất kể giá trị $Z$.
+
+\newpage
+\subsection{Lưu đồ Thuật toán}
+
+\begin{algorithm}[htbp]
+\caption{Hybrid Genetic Algorithm cho IRP-TW-DT}
+\label{alg:hga}
+\begin{algorithmic}[1]
+\Require Instance $\mathcal{I}$, $P$ (pop. size), $G$ (generations), $T_{\max}$ (time limit)
+\Ensure Chromosome $\text{chrom}^*$ với $F$ tốt nhất
+
+\State Khởi tạo population $\mathcal{P} = \{\text{chrom}_p\}_{p=1}^{P}$ ngẫu nhiên, đảm bảo mỗi khách được giao $\geq 1$ lần
+\State Evaluate $F(\text{chrom}_p)$ cho mọi $p$ bằng Decode() + TD-Split
+\State $\text{chrom}^* \leftarrow \arg\min_p F(\text{chrom}_p)$
+
+\For{$g = 1$ to $G$}
+  \If{thời gian chạy $> T_{\max}$} \textbf{break} \EndIf
+  \State $\mathcal{P}' \leftarrow$ Top $10\%$ của $\mathcal{P}$ (elitism)
+  \While{$|\mathcal{P}'| < P$}
+    \State $p_1, p_2 \leftarrow$ Tournament Selection($\mathcal{P}$, $k=5$)
+    \State $c_1, c_2 \leftarrow$ Crossover$(p_1, p_2)$ \Comment{OX + Uniform Crossover}
+    \State Mutate$(c_1)$; Mutate$(c_2)$
+    \State Repair$(c_1, \mathcal{I})$; Repair$(c_2, \mathcal{I})$
+    \State Evaluate $F(c_1)$, $F(c_2)$
+    \State $\mathcal{P}' \leftarrow \mathcal{P}' \cup \{c_1, c_2\}$
+  \EndWhile
+  \State $\mathcal{P} \leftarrow$ Sort$(\mathcal{P}')$, giữ $P$ cá thể tốt nhất
+  \For{$p = 1$ to $\lceil P/5 \rceil$} \Comment{Local search top 20\%}
+    \State $\mathcal{P}[p] \leftarrow$ 2opt$(\mathcal{P}[p])$
+    \State $\mathcal{P}[p] \leftarrow$ TimeShiftNS$(\mathcal{P}[p], \mathcal{I})$
+  \EndFor
+  \If{$F(\mathcal{P}[1]) < F(\text{chrom}^*)$}
+    $\text{chrom}^* \leftarrow \mathcal{P}[1]$
+  \EndIf
+\EndFor
+\State \Return $\text{chrom}^*$
+\end{algorithmic}
+\end{algorithm}
+
+% ============================================================
+\section{Dữ liệu Nghiên cứu}
+% ============================================================
+
+\subsection{Bộ dữ liệu mô phỏng Hà Nội (Synthetic Hanoi Dataset)}
+
+Dữ liệu được sinh tổng hợp, kế thừa cấu trúc phân cụm không gian từ khóa luận CVRPTW
+với $K=5$ cụm phân bố trong bán kính 15 km từ depot (trung tâm Hoàn Kiếm). Các tham số
+tồn kho được sinh ngẫu nhiên:
+
+\begin{itemize}[leftmargin=*]
+  \item $U_i \sim \mathcal{U}(80, 200)$ đơn vị.
+  \item $L_i^{\min} = U_i \cdot \mathcal{U}(0.10, 0.20)$ (tồn kho an toàn 10--20\%).
+  \item $I_{i0} \sim \mathcal{U}(L_i^{\min}, 0.6 \cdot U_i)$ (bắt đầu ở mức 30--60\%).
+  \item $d_{it} \sim \text{Lognormal}(\mu_d, 0.3)$ với $\mu_d = \log(U_i/7)$
+        (nhu cầu trung bình $\approx U_i/7 \approx 14\%$ dung lượng/ngày ---
+        phù hợp văn học IRP; đủ dư địa để tối ưu hóa lịch giao trong 7 ngày).
+  \item $h_i \sim \mathcal{U}(100, 500)$ VND/đơn vị/ngày.
+  \item Khung thời gian: 2 ca (8h--12h hoặc 14h--18h), gán ngẫu nhiên cho từng khách.
+  \item $s_i = 0{,}25$h (hằng số cho mọi khách hàng).
+\end{itemize}
+
+\noindent\textbf{Giả định tính khả thi (Single-visit Feasibility):}
+Mỗi instance được sinh đảm bảo điều kiện: mỗi khách hàng $i$ có thể được phục vụ đơn
+lẻ trong khung thời gian của mình nếu xe xuất phát từ depot vào đầu ca (6h hoặc 13h).
+Cụ thể, với tốc độ tệ nhất $v^{(2)} = 15$~km/h và bán kính tối đa 15~km, thời gian đến
+khách xa nhất là $15/15 = 1$~giờ, đủ để vào cửa sổ [8h, 12h] nếu xuất phát lúc 6h.
+Điều kiện này được kiểm tra tự động trong quá trình sinh dữ liệu:
+$e_i \geq w_{0k} + \tau_{0i}(w_{0k}) + s_i$ với ít nhất một giờ xuất phát khả thi.
+Nếu vi phạm, instance được sinh lại.
+
+\subsection{Tham số hệ thống}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Tham số & Giá trị & Nguồn \\
+\midrule
+Chân trời kế hoạch $T$ & 7 ngày & Tiêu chuẩn IRP văn học \\
+Số xe $m$ & 2/3/5 (tương ứng S/M/L) & Đề xuất \\
+Tải trọng xe $Q$ & 500 đơn vị & Đề xuất \\
+$c_d$ (chi phí khoảng cách) & 3.500 VND/km & Ước tính: chi phí nhiên liệu + bảo trì biến đổi \\
+                              &               & xe tải nhỏ; \textit{cần hiệu chỉnh thực địa} \\
+$c_t$ (chi phí thời gian) & 68.000--80.000 VND/giờ & Từ mức lương tài xế Hà Nội 2024 \\
+                           &                          & 8--15 triệu VND/tháng \citep{jobsgo2024} \\
+Speed profile & Bảng \ref{tab:speed} & TomTom Traffic Index 2025 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Bộ Benchmark Chuẩn (để Validate HGA)}
+
+Trước khi chạy trên dữ liệu Hà Nội, HGA được kiểm chứng trên các instance chuẩn của
+\citealias{archetti2007branch} (bộ Archetti instances, 5--50 khách) để so sánh với
+kết quả exact solver. Bộ benchmark mới của \citealias{skalnes2024benchmark}
+(270 instances, 10--200 khách) cũng sẽ được xem xét để kiểm tra scalability.
+
+% ============================================================
+\section{Thiết kế Thực nghiệm}
+% ============================================================
+
+\subsection{Bốn Kịch bản So sánh}
+
+\begin{table}[htbp]
+\centering
+\caption{Thiết kế bốn kịch bản thực nghiệm}
+\label{tab:scenarios}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Kịch bản} & \textbf{Mô hình} & \textbf{Mô tả} \\
+\midrule
+\rowcolor{lightblue}
+P --- Periodic & Heuristic & Giao hàng định kỳ mỗi 3 ngày cho tất cả khách.
+           Phản ánh cách vận hành đơn giản nhất trong thực tế.
+           Tốc độ hằng $\bar{v} = 18$~km/h. \\
+\rowcolor{lightred}
+A --- RMI & CVRPTW & Xe giao ngay ngày hôm sau khi khách báo
+           $I_{it} \leq L_i^{\min}$. Tốc độ hằng $\bar{v} = 18$~km/h.
+           Phản ánh thực tế phổ biến của doanh nghiệp logistics Việt Nam. \\
+\rowcolor{lightyellow}
+B --- IRP-TW-Static & IRP-TW & Mô hình IRP-TW nhưng tắt giao thông động,
+           dùng cùng tốc độ hằng $\bar{v} = 18$~km/h.
+           So sánh B vs.\ A: đóng góp thuần của VMI scheduling;
+           so sánh B vs.\ C: đóng góp thuần của Dynamic Traffic. \\
+\rowcolor{lightgreen}
+C --- IRP-TW-DT & IRP-TW-DT & Mô hình đề xuất đầy đủ với profile giao thông
+           Hà Nội 5 múi giờ và HGA kết hợp Time-Shift neighborhood search. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Quy mô Thực nghiệm}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Kích thước}: 4 kịch bản $\times$ 3 quy mô $\times$ 5 seeds = 60 runs.
+  \item \textbf{Quy mô nhỏ (S)}: $n = 20$, $m = 2$ xe.
+  \item \textbf{Quy mô trung bình (M)}: $n = 50$, $m = 3$ xe.
+  \item \textbf{Quy mô lớn (L)}: $n = 100$, $m = 5$ xe.
+  \item \textbf{Seeds}: $\{42, 123, 456, 789, 1000\}$ để đảm bảo tính tái lập.
+  \item \textbf{Thời gian giới hạn HGA}: 5 phút/instance với NumPy vectorization
+        (ước tính cho $n=100$: $\sim$1--2 phút; Python thuần: $\sim$10--30 phút).
+  \item \textbf{Kịch bản P (Periodic)}: không dùng HGA; giao cố định mỗi 3 ngày,
+        routing giải bằng nearest-neighbor heuristic --- implement trong $< 1$ giờ.
+\end{itemize}
+
+\subsection{Chỉ số Đánh giá (KPIs)}
+
+\begin{table}[htbp]
+\centering
+\caption{Các chỉ số đánh giá hiệu năng}
+\label{tab:kpis}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{KPI} & \textbf{Đơn vị} & \textbf{Ý nghĩa và cách tính} \\
+\midrule
+Total Cost ($Z$) & VND & Hàm mục tiêu (\ref{eq:obj}): tổng lưu kho + routing \\
+Inventory Cost   & VND & $\sum_t \sum_i h_i I_{it}$ --- đo mức ``găm hàng'' \\
+Routing Cost     & VND & Tổng chi phí khoảng cách và thời gian \\
+Avg. Inventory Level & \% $U_i$ & Mức tồn kho trung bình, phản ánh trade-off \\
+Total Distance   & km & Tổng quãng đường tất cả xe \\
+TW Compliance Rate & \% & Tỷ lệ chuyến giao đúng trong time window \\
+\# Deliveries    & --  & Tổng số lần giao trên toàn bộ horizon \\
+CPU Time         & giây & Thời gian tính toán \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Phương pháp Phân tích Kết quả}
+
+\begin{itemize}[leftmargin=*]
+  \item \boldterm{P vs. A (Periodic vs. RMI)}: Kiểm tra xem reactive demand-driven
+        có thực sự tốt hơn giao định kỳ không --- kết quả có thể bất ngờ.
+  \item \boldterm{A vs. B (RMI vs. IRP-TW-Static)}: Tính phần trăm tiết kiệm khi
+        chuyển từ reactive sang VMI scheduling với tốc độ hằng. Kiểm định t-test.
+  \item \boldterm{B vs. C (Static vs. Dynamic)}: Phân tích đóng góp thuần của
+        dynamic traffic bằng kiểm định Wilcoxon signed-rank.
+  \item \boldterm{Phân tích Trade-off}: Scatter plot (Inventory Cost, Routing Cost)
+        phân tầng theo kịch bản --- kiểm tra giả thuyết \textit{"giao thông tắc nghẽn
+        buộc nhà cung cấp chấp nhận tồn kho cao hơn để tránh giờ cao điểm"}.
+  \item \boldterm{Validation HGA}: So sánh gap \% giữa HGA và MILP lower bound (HiGHS)
+        trên instances nhỏ ($n \leq 10$, $T = 3$, tốc độ cố định). Mục tiêu: gap $\leq 15\%$.
+        Lưu ý: với $n=20$ và $T=7$, MILP có thể không hội tụ trong 10 phút ---
+        validate chỉ thực hiện trên tập con nhỏ.
+  \item \boldterm{Convergence analysis}: Vẽ đường hội tụ fitness theo số generations.
+\end{itemize}
+
+% ============================================================
+\section{Đóng góp Dự kiến}
+% ============================================================
+
+\begin{description}[leftmargin=0cm, itemsep=8pt]
+  \item[\boldterm{Đóng góp lý luận:}]
+    Mô hình IRP-TW-DT là mở rộng của TD-IRP \citep{touzout2022assign} với ràng buộc
+    time windows --- khoảng trống chưa được lấp. Công trình cung cấp bằng chứng
+    định lượng lần đầu tiên về trade-off giữa \textit{chi phí lưu kho} và
+    \textit{chi phí ách tắc đô thị} khi tích hợp time windows vào IRP.
+
+  \item[\boldterm{Đóng góp phương pháp:}]
+    Thuật toán HGA với Two-part Chromosome là một trong số ít metaheuristic
+    giải TD-IRP trong văn học (sau matheuristic của Touzout et al., 2022).
+    \textit{Time-Shift neighborhood search} --- tìm kiếm lân cận trên trục thời gian ---
+    là cơ chế mới khác về bản chất với 2-opt tối ưu định tuyến trên không gian.
+
+  \item[\boldterm{Đóng góp thực tiễn:}]
+    Kết quả thực nghiệm cung cấp cơ sở ra quyết định (Decision Support) cho doanh
+    nghiệp logistics tại Hà Nội khi cân nhắc chuyển sang VMI. Cụ thể, nghiên cứu
+    kiểm tra giả thuyết: \textit{tắc nghẽn đô thị có thể justify việc giao hàng sớm
+    hơn và duy trì tồn kho cao hơn} --- trade-off mà mô hình tĩnh không thể định
+    lượng. Insight này trực tiếp ảnh hưởng đến quyết định về buffer stock và
+    lịch giao hàng trong thực tế.
+
+  \item[\boldterm{Đóng góp dữ liệu:}]
+    Công bố bộ synthetic benchmark Hà Nội (mã nguồn mở) để khuyến khích nghiên cứu
+    IRP trong bối cảnh đô thị đang phát triển của châu Á.
+\end{description}
+
+% ============================================================
+\section{Kế hoạch Thực hiện}
+% ============================================================
+
+\begin{table}[htbp]
+\centering
+\caption{Roadmap thực hiện (10 tuần)}
+\label{tab:roadmap}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}c X X@{}}
+\toprule
+\textbf{Tuần} & \textbf{Công việc} & \textbf{Kết quả kiểm chứng} \\
+\midrule
+1 & Đọc Touzout et al. (2022) toàn văn; cài môi trường Python + NumPy;
+    implement IGP traffic model. &
+    Unit test FIFO: $\forall \tau_1 < \tau_2$: arrival$(\tau_1) \leq$ arrival$(\tau_2)$. \\
+2 & Thiết kế data structures (dataclasses); implement inventory simulation;
+    sinh bộ dữ liệu Hà Nội cho $n = 20$. &
+    Kiểm tra cân bằng tồn kho, phát hiện bug tồn kho âm. \\
+3 & TD-Split Algorithm; tính $C_t(i,j)$ với time-dependent cost;
+    precompute lookup table $\hat{\tau}_{ij}^{(s)}$ cho MILP. &
+    Split không vi phạm tải trọng; cost tính đúng trên test case nhỏ. \\
+4 & Full fitness evaluation; Two-part Chromosome; random initialization;
+    chạy single-thread GA trên $n=20$. &
+    Evaluate() chạy đúng; penalty hoạt động; fitness giảm nhẹ sau khởi tạo. \\
+5 & Crossover (OX + Uniform), Mutation, Repair operator hoàn chỉnh. &
+    Fitness giảm rõ qua generations trên $n=20$, 5 seeds. \\
+6 & Time-Shift operator; 2-opt với fast evaluation;
+    tuning siêu tham số (pop, mutation rate). &
+    Time-Shift cải thiện $\geq 3\%$ so với không có local search ($n=20$). \\
+7 & Cài HiGHS Python API; code MILP lower bound ($n \leq 10$, $T=3$);
+    validate HGA trên tập nhỏ này. &
+    MILP hội tụ $< 5$ phút với $n=10$; HGA gap $\leq 15\%$ là mục tiêu. \\
+8 & Implement Periodic Delivery baseline (nearest-neighbor + fixed schedule);
+    sinh dữ liệu cho $n = 50, 100$; chạy 60 experiments
+    (4 kịch bản $\times$ 3 quy mô $\times$ 5 seeds). &
+    Tất cả 60 runs hoàn thành; kết quả lưu CSV. \\
+9 & Phân tích thống kê (t-test, Wilcoxon); scatter plot trade-off;
+    convergence curves. &
+    Kiểm định có $p < 0.05$ cho ít nhất 1 so sánh có ý nghĩa. \\
+10 & Viết báo cáo hoàn chỉnh; review nội bộ; chuẩn bị slide. &
+    Bản thảo báo cáo với đủ bảng kết quả, hình, và thảo luận. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================
+\section{Kết luận}
+% ============================================================
+
+Nghiên cứu đề xuất mô hình IRP-TW-DT --- bài toán Inventory Routing Problem tích hợp
+Time Windows và Giao thông Động --- như một bước tiến tự nhiên tiếp theo sau công trình
+TD-IRP của \citealias{touzout2022assign}. Bốn kịch bản thực nghiệm (Periodic, RMI,
+IRP-TW-Static, IRP-TW-DT) cho phép tách biệt đóng góp của từng thành phần: VMI scheduling,
+time windows, và dynamic traffic. Time-Shift neighborhood search trên trục thời gian là
+cơ chế thuật toán phân biệt rõ đề tài này với các công trình trước. Kết quả dự kiến sẽ
+định lượng được mức độ tắc nghẽn đô thị ảnh hưởng đến trade-off tồn kho -- vận tải,
+cung cấp nền tảng khoa học thực tiễn cho logistics chặng cuối tại các đô thị đang phát
+triển nhanh của châu Á.
+
+% ============================================================
+%  REFERENCES
+% ============================================================
+\newpage
+\bibliographystyle{abbrvnat}
+
+\begin{thebibliography}{99}
+
+\bibitem[Adamo et al.(2024)]{adamo2024review}
+Adamo, T., Gendreau, M., Ghiani, G., \& Guerriero, E. (2024).
+A review of recent advances in time-dependent vehicle routing.
+\textit{European Journal of Operational Research}, 319(1), 1--15.
+
+\bibitem[Adulyasak et al.(2014)]{adulyasak2014branch}
+Adulyasak, Y., Cordeau, J.-F., \& Jans, R. (2014).
+Formulations and branch-and-cut algorithms for multivehicle production and inventory routing problems.
+\textit{INFORMS Journal on Computing}, 26(1), 103--120.
+
+\bibitem[Archetti et al.(2007)]{archetti2007branch}
+Archetti, C., Bertazzi, L., Laporte, G., \& Speranza, M. G. (2007).
+A branch-and-cut algorithm for a vendor-managed inventory-routing problem.
+\textit{Transportation Science}, 41(3), 382--391.
+
+\bibitem[Archetti \& Speranza(2016)]{archetti2016vmi}
+Archetti, C., \& Speranza, M. G. (2016).
+The inventory routing problem: The value of integration.
+\textit{International Transactions in Operational Research}, 23(3), 393--407.
+
+\bibitem[Bouvier et al.(2024)]{bouvier2024continent}
+Bouvier, T., Vidal, T., Gendreau, M., \& Laporte, G. (2024).
+Solving a continent-scale inventory routing problem at Renault.
+\textit{Transportation Science}, 58(2), 340--360.
+
+\bibitem[Coelho et al.(2014)]{coelho2014thirty}
+Coelho, L. C., Cordeau, J.-F., \& Laporte, G. (2014).
+Thirty years of inventory routing.
+\textit{Transportation Science}, 48(1), 1--19.
+
+\bibitem[Desaulniers et al.(2016)]{desaulniers2016branch}
+Desaulniers, G., Rakke, J. G., \& Coelho, L. C. (2016).
+A branch-price-and-cut algorithm for the inventory routing problem.
+\textit{Transportation Science}, 50(3), 1060--1076.
+
+\bibitem[Gevaers et al.(2011)]{gevaers2011characterization}
+Gevaers, R., Van de Voorde, E., \& Vanelslander, T. (2011).
+Characteristics and typology of last-mile logistics from an innovation perspective in an urban context.
+\textit{City Distribution and Urban Freight Transport: Multiple Perspectives}, 56--71.
+
+\bibitem[FedEx(2024)]{fedex2024apac}
+FedEx Vietnam. (2024).
+Best Last-Mile Delivery Options for APAC SMEs.
+Retrieved from \url{https://www.fedex.com/en-vn/business-insights/ecommerce/last-mile-delivery-apac-smes.html}
+
+\bibitem[Allied Market Research(2022)]{amr2022vietnam}
+Allied Market Research. (2022).
+Vietnam Express Delivery Services Market.
+Retrieved from \url{https://www.alliedmarketresearch.com/vietnam-express-delivery-services-market-A11094}
+
+\bibitem[TomTom(2025)]{tomtom2025hanoi}
+TomTom. (2025).
+Ha Noi Traffic Report --- TomTom Traffic Index 2025.
+Retrieved from \url{https://www.tomtom.com/traffic-index/city/ha-noi}
+
+\bibitem[JobsGO(2024)]{jobsgo2024}
+JobsGO. (2024).
+Mức lương tài xế hiện nay.
+Retrieved from \url{https://jobsgo.vn/muc-luong-tai-xe.html}
+
+\bibitem[Ghiani \& Guerriero(2014)]{ghiani2014note}
+Ghiani, G., \& Guerriero, E. (2014).
+A note on the Ichoua, Gendreau, and Potvin (2003) travel time model.
+\textit{Transportation Science}, 48(3), 458--462.
+
+\bibitem[Ichoua et al.(2003)]{ichoua2003vehicle}
+Ichoua, S., Gendreau, M., \& Potvin, J.-Y. (2003).
+Vehicle dispatching with time-dependent travel times.
+\textit{European Journal of Operational Research}, 144(2), 379--396.
+
+\bibitem[Rifki et al.(2020)]{rifki2020impact}
+Rifki, O., Chiabaut, N., \& Solnon, C. (2020).
+On the impact of spatio-temporal granularity of traffic conditions on the quality of pickup and delivery optimal tours.
+\textit{Transportation Research Part E}, 142, 102043.
+
+\bibitem[Skålnes et al.(2022)]{skalnes2022improved}
+Skålnes, J., Andersson, H., Desaulniers, G., \& Stålhane, M. (2022).
+An improved formulation for the inventory routing problem with time-varying demands.
+\textit{European Journal of Operational Research}, 302(3), 1189--1201.
+
+\bibitem[Skålnes et al.(2024)]{skalnes2024benchmark}
+Skålnes, J., Ben Ahmed, M., Hvattum, L. M., \& Stålhane, M. (2024).
+New benchmark instances for the inventory routing problem.
+\textit{European Journal of Operational Research}, 313(3), 959--975.
+
+\bibitem[Touzout et al.(2022)]{touzout2022assign}
+Touzout, F. A., Ladier, A.-L., \& Hadj-Hamou, K. (2022).
+An assign-and-route matheuristic for the time-dependent inventory routing problem.
+\textit{European Journal of Operational Research}, 300(3), 1081--1097.
+
+\bibitem[Vidal et al.(2012)]{vidal2012hga}
+Vidal, T., Crainic, T. G., Gendreau, M., \& Prins, C. (2012).
+A hybrid genetic algorithm for multidepot and periodic vehicle routing problems.
+\textit{Operations Research}, 60(3), 611--624.
+
+\bibitem[Visser \& Spliet(2020)]{visser2020efficient}
+Visser, T. R., \& Spliet, R. (2020).
+Efficient move evaluations for time-dependent vehicle routing problems.
+\textit{Transportation Science}, 54(4), 1091--1112.
+
+\end{thebibliography}
+
+\end{document}

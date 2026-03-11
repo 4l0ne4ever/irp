@@ -1,0 +1,9 @@
+{
+  "name": "irp_hanoi_lognormal_20_customers_seed456",
+  "n": 20,
+  "T": 7,
+  "m": 2,
+  "c_d": 3500.0,
+  "c_t": 74000.0,
+  "Q": 500.0
+}

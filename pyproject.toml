@@ -1,0 +1,23 @@
+[project]
+name = "irp-tw-dt"
+version = "1.0.0"
+description = "IRP-TW-DT: Inventory Routing Problem with Time Windows & Dynamic Traffic"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+full = [
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "highspy>=1.5",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

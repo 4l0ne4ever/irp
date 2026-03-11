@@ -91,7 +91,7 @@ Create a `.env` file in the project root:
 
 ```env
 OSRM_BASE_URL=http://router.project-osrm.org
-PYTHONPATH=/Users/duongcongthuyet/Downloads/workspace/AI\ /irp
+PYTHONPATH=
 ```
 
 ## Usage
@@ -321,12 +321,4 @@ python3 -m cProfile -s cumulative -m src.main run --scenario C --n 100 --m 5 --s
 
 MIT License — See LICENSE file for details.
 
-## Contact
 
-**Author:** Duong Cong Thuyet  
-**Affiliation:** University of Science, HCMC  
-**Email:** duongcongthuyet@hcmut.edu.vn
-
----
-
-_Last Updated: March 12, 2026_

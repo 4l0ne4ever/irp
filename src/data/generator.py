@@ -13,8 +13,16 @@ from src.core.constants import (
     DEFAULT_T, DEFAULT_Q, C_D, C_T, SERVICE_TIME,
     NUM_CLUSTERS, MAX_RADIUS_KM, TW_SHIFTS,
 )
-from src.core.instance import Instance, compute_distance_matrix
+from src.core.instance import Instance
 from src.core.traffic import igp_travel_time
+from src.data.distances import compute_osrm_distance_matrix
+
+# Hanoi city centre (Hoan Kiem Lake) — reference for synthetic instances.
+# 1km ≈ 0.00899° lat, 0.00949° lon at this latitude.
+_HANOI_LON = 105.8542
+_HANOI_LAT = 21.0285
+_DEG_PER_KM_LAT = 1.0 / 111.32
+_DEG_PER_KM_LON = 1.0 / (111.32 * np.cos(np.radians(_HANOI_LAT)))
 
 
 def generate_hanoi_instance(
@@ -75,9 +83,15 @@ def generate_hanoi_instance(
         scale = MAX_RADIUS_KM / dists_from_depot[too_far]
         customer_coords[too_far] *= scale[:, np.newaxis] * 0.95
 
-    # Combine depot (0,0) with customers
-    coords = np.vstack([np.array([[0.0, 0.0]]), customer_coords])
-    dist_matrix = compute_distance_matrix(coords)
+    # Combine depot (0,0) with customers — local km coords
+    local_coords = np.vstack([np.array([[0.0, 0.0]]), customer_coords])
+
+    # Convert local (x_km, y_km) to GPS [lon, lat] relative to Hanoi centre
+    coords = np.zeros_like(local_coords)
+    coords[:, 0] = _HANOI_LON + local_coords[:, 0] * _DEG_PER_KM_LON  # lon
+    coords[:, 1] = _HANOI_LAT + local_coords[:, 1] * _DEG_PER_KM_LAT  # lat
+
+    dist_matrix, _ = compute_osrm_distance_matrix(coords)
 
     # ---- Inventory parameters ----
     U = rng.uniform(80, 200, n).astype(float)

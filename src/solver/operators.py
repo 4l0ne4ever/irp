@@ -144,9 +144,8 @@ def repair(
     avg_travel = avg_inter_dist / 18.0  # conservative speed estimate
     depot_travel = avg_depot_dist / 18.0
     tw_width = 4.0  # typical [8-12] or [14-18]
-    usable_time = max(tw_width - depot_travel, 1.0)
+    usable_time = max(tw_width - 2 * depot_travel, 1.0)  # depot→first + last→depot
     per_stop_time = np.mean(inst.s) + avg_travel
-    # Conservative estimate: leave 1-customer buffer per route
     max_per_route = max(2, int(usable_time / per_stop_time) - 1)
     max_per_shift = m * max_per_route
 

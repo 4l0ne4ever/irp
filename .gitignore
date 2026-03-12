@@ -56,7 +56,7 @@ htmlcov/
 .vscode/settings.json
 
 # Project-specific Output
-results/
+
 output/
 *.log
 tmp/

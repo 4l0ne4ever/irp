@@ -12,7 +12,6 @@ Key transformations:
 import json
 import logging
 import os
-import math
 from typing import Optional
 
 import numpy as np
@@ -24,57 +23,6 @@ from src.core.constants import (
     DEFAULT_T, DEFAULT_Q, C_D, C_T, SERVICE_TIME, TW_SHIFTS,
 )
 from src.data.distances import compute_osrm_distance_matrix
-
-
-def haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-    """
-    Compute Haversine distance between two GPS points in km.
-
-    Parameters
-    ----------
-    lon1, lat1, lon2, lat2 : float
-        Longitude and latitude in decimal degrees.
-
-    Returns
-    -------
-    float
-        Distance in km.
-    """
-    R = 6371.0  # Earth radius in km
-    dlon = math.radians(lon2 - lon1)
-    dlat = math.radians(lat2 - lat1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) ** 2)
-    c = 2 * math.asin(math.sqrt(a))
-    return R * c
-
-
-def compute_haversine_matrix(coords_gps: np.ndarray) -> np.ndarray:
-    """
-    Compute distance matrix using Haversine formula.
-
-    Parameters
-    ----------
-    coords_gps : np.ndarray
-        Shape (N, 2) with columns [longitude, latitude] in decimal degrees.
-
-    Returns
-    -------
-    np.ndarray
-        Shape (N, N) distance matrix in km.
-    """
-    N = coords_gps.shape[0]
-    dist = np.zeros((N, N))
-    for i in range(N):
-        for j in range(i + 1, N):
-            d = haversine_km(
-                coords_gps[i, 0], coords_gps[i, 1],
-                coords_gps[j, 0], coords_gps[j, 1],
-            )
-            dist[i, j] = d
-            dist[j, i] = d
-    return dist
 
 
 def convert_vrptw_to_irp(
@@ -131,12 +79,9 @@ def convert_vrptw_to_irp(
     for c in customers:
         coords_gps[c["id"]] = [c["x"], c["y"]]
 
-    # ---- Distance matrix (OSRM real road distance, fallback Haversine) ----
+    # ---- Distance matrix (OSRM real road distance) ----
     dist_matrix, used_osrm = compute_osrm_distance_matrix(coords_gps)
-    if used_osrm:
-        logger.info(f"  Using OSRM real road distances for {n} customers")
-    else:
-        logger.warning(f"  OSRM failed, using Haversine for {n} customers")
+    logger.info(f"  OSRM real road distances computed for {n} customers")
 
     # ---- Time windows → 2-shift mapping ----
     # Original TW in minutes from midnight. Map to standard IRP shifts:

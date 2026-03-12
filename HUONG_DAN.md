@@ -364,7 +364,7 @@ python3 -m src.main convert \
 ```
 
 > **Yêu cầu:** Cần kết nối internet để lấy khoảng cách thực từ OSRM API.  
-> Nếu OSRM không khả dụng, hệ thống tự động fallback sang khoảng cách Haversine (GPS).
+> OSRM là nguồn khoảng cách duy nhất — không có fallback.
 
 ---
 
@@ -446,8 +446,7 @@ pip install -r requirements.txt
 
 Kiểm tra các nguyên nhân phổ biến:
 
-1. **OSRM thất bại** → khoảng cách Haversine ngắn hơn thực tế → TW bị vi phạm  
-   → Kiểm tra kết nối internet, chạy lại lệnh convert
+1. **OSRM thất bại** → Kiểm tra kết nối internet, chạy lại lệnh convert
 2. **Tham số `m` quá nhỏ** → không đủ xe cho tất cả khách hàng  
    → Tăng `--m` lên (S: 2–3, M: 3–4, L: 5–6)
 
@@ -471,7 +470,7 @@ curl "http://router.project-osrm.org/table/v1/driving/105.79,21.03;105.85,21.01?
 Invoke-WebRequest "http://router.project-osrm.org/table/v1/driving/105.79,21.03;105.85,21.01?annotations=distance"
 ```
 
-Nếu OSRM không hoạt động, hệ thống tự fallback sang khoảng cách Haversine (GPS). Kết quả vẫn hợp lệ nhưng khoảng cách có thể nhỏ hơn thực tế ~20–30%.
+OSRM là nguồn khoảng cách duy nhất — nếu API không phản hồi, quá trình convert sẽ báo lỗi. Đảm bảo kết nối internet ổn định khi chạy convert.
 
 ---
 

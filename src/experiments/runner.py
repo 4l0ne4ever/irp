@@ -25,7 +25,7 @@ from src.core.constants import (
     EXPERIMENT_SEEDS, SCALE_CONFIGS, GA_POP_SIZE, GA_GENERATIONS, GA_TIME_LIMIT,
     C_D,
 )
-from src.data.generator import generate_hanoi_instance, load_instance
+from src.data.generator import load_instance
 from src.solver.hga import HGA
 from src.baselines.periodic import solve_periodic
 from src.baselines.rmi import solve_rmi
@@ -60,9 +60,12 @@ def _load_or_generate_instance(
             logger.info(f"  Loading real instance from {inst_path}")
             return load_instance(inst_path)
         else:
-            logger.warning(f"  Instance not found at {inst_path}, generating synthetic")
+            raise FileNotFoundError(
+                f"Instance not found at {inst_path}. "
+                f"Run 'python -m src.main convert' first to generate instances from VRPTW data."
+            )
 
-    return generate_hanoi_instance(n=n, m=m, seed=seed)
+    raise ValueError("instance_dir is required — only real OSRM-based instances are supported")
 
 
 def run_all_experiments(

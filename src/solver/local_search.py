@@ -86,6 +86,128 @@ def two_opt_route(
     )
 
 
+def or_opt_day(
+    routes: List[Route],
+    inst: Instance,
+    use_dynamic: bool = True,
+) -> List[Route]:
+    """
+    Or-opt: relocate 1 or 2 consecutive customers between routes on the same day.
+
+    For each pair of routes (r1, r2), try removing a segment of 1-2 customers
+    from r1 and inserting into the best position in r2. Accept if total cost
+    improves and both routes remain within capacity Q.
+
+    Parameters
+    ----------
+    routes : List[Route]
+    inst : Instance
+    use_dynamic : bool
+
+    Returns
+    -------
+    List[Route]
+        Improved routes.
+    """
+    if len(routes) < 2:
+        return routes
+
+    improved = True
+    while improved:
+        improved = False
+        for r1_idx in range(len(routes)):
+            if improved:
+                break
+            r1 = routes[r1_idx]
+            if len(r1.stops) <= 1:
+                continue
+
+            custs_1 = [s[0] - 1 for s in r1.stops]
+            qty_1 = {s[0] - 1: s[1] for s in r1.stops}
+
+            for r2_idx in range(len(routes)):
+                if r1_idx == r2_idx:
+                    continue
+                if improved:
+                    break
+
+                r2 = routes[r2_idx]
+                custs_2 = [s[0] - 1 for s in r2.stops]
+                qty_2 = {s[0] - 1: s[1] for s in r2.stops}
+
+                # Compute current costs
+                q_day_1 = np.zeros(inst.n)
+                for c, q in qty_1.items():
+                    q_day_1[c] = q
+                q_day_2 = np.zeros(inst.n)
+                for c, q in qty_2.items():
+                    q_day_2[c] = q
+
+                cost_1, _ = _compute_route_cost(
+                    custs_1, inst, r1.depart_h, r1.day, q_day_1, use_dynamic)
+                cost_2, _ = _compute_route_cost(
+                    custs_2, inst, r2.depart_h, r2.day, q_day_2, use_dynamic)
+                old_total = cost_1 + cost_2
+
+                # Try segment sizes 1 and 2
+                for seg_len in [1, 2]:
+                    if improved:
+                        break
+                    for ci in range(len(custs_1) - seg_len + 1):
+                        segment = custs_1[ci:ci + seg_len]
+                        seg_load = sum(qty_1[c] for c in segment)
+
+                        # Check capacity of r2 after insertion
+                        new_r2_load = sum(qty_2.values()) + seg_load
+                        if new_r2_load > inst.Q + 1e-6:
+                            continue
+
+                        new_custs_1 = custs_1[:ci] + custs_1[ci + seg_len:]
+                        if not new_custs_1:
+                            continue
+
+                        # Cost of r1 without segment
+                        q_combined = np.zeros(inst.n)
+                        for cc in new_custs_1:
+                            q_combined[cc] = qty_1[cc]
+                        new_cost_1, _ = _compute_route_cost(
+                            new_custs_1, inst, r1.depart_h, r1.day, q_combined, use_dynamic)
+
+                        # Try all insertion positions in r2
+                        best_new_cost_2 = float('inf')
+                        best_new_stops = None
+                        for pos in range(len(custs_2) + 1):
+                            trial = custs_2[:pos] + segment + custs_2[pos:]
+                            q_trial = np.zeros(inst.n)
+                            for cc in trial:
+                                q_trial[cc] = qty_2.get(cc, qty_1.get(cc, 0))
+                            trial_cost, trial_stops = _compute_route_cost(
+                                trial, inst, r2.depart_h, r2.day, q_trial, use_dynamic)
+                            if trial_cost < best_new_cost_2:
+                                best_new_cost_2 = trial_cost
+                                best_new_stops = trial_stops
+
+                        new_total = new_cost_1 + best_new_cost_2
+                        if new_total < old_total - 1e-6:
+                            # Accept move
+                            q_new_1 = np.zeros(inst.n)
+                            for cc in new_custs_1:
+                                q_new_1[cc] = qty_1[cc]
+                            _, new_stops_1 = _compute_route_cost(
+                                new_custs_1, inst, r1.depart_h, r1.day, q_new_1, use_dynamic)
+
+                            routes[r1_idx] = Route(
+                                vehicle_id=r1.vehicle_id, day=r1.day,
+                                depart_h=r1.depart_h, stops=new_stops_1)
+                            routes[r2_idx] = Route(
+                                vehicle_id=r2.vehicle_id, day=r2.day,
+                                depart_h=r2.depart_h, stops=best_new_stops)
+                            improved = True
+                            break
+
+    return routes
+
+
 def time_shift(
     chrom: Chromosome,
     inst: Instance,
@@ -257,11 +379,12 @@ def apply_local_search(
     else:
         improved = copy_chromosome(chrom)
 
-    # Step 2: 2-opt on each route
+    # Step 2: 2-opt on each route, then Or-opt between routes per day
     sol = decode_chromosome(improved, inst, use_dynamic=use_dynamic)
 
     any_improved = False
     for t in range(inst.T):
+        # Intra-route: 2-opt
         for r_idx, route in enumerate(sol.schedule[t]):
             if len(route.stops) > 2:
                 new_route = two_opt_route(route, inst, use_dynamic=use_dynamic)
@@ -270,6 +393,13 @@ def apply_local_search(
                 if (new_d + new_t) < (old_d + old_t) - 1e-6:
                     sol.schedule[t][r_idx] = new_route
                     any_improved = True
+
+        # Inter-route: Or-opt (relocate customers between routes)
+        if len(sol.schedule[t]) >= 2:
+            old_routes = sol.schedule[t]
+            new_routes = or_opt_day(old_routes, inst, use_dynamic=use_dynamic)
+            sol.schedule[t] = new_routes
+            any_improved = True
 
     if any_improved:
         sol.cost_distance = 0.0

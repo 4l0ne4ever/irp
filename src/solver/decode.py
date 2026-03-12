@@ -81,29 +81,46 @@ def td_split(
     pred = np.full((num_cust + 1, max_routes + 1), -1, dtype=int)
     route_info = {}  # (i, j, k) -> (cost, stops)
 
+    # Cache route costs: segment (i,j) has the same cost regardless of k.
+    # This avoids O(n^2 * m) redundant _compute_route_cost calls,
+    # reducing to O(n^2) cost evaluations + O(n^2 * m) DP lookups.
+    seg_cost = {}   # (i, j) -> cost
+    seg_stops = {}  # (i, j) -> stops
+    seg_load = {}   # (i, j) -> total load
+
+    # Pre-compute segment costs and loads (O(n^2))
+    for j in range(1, num_cust + 1):
+        cumulative_load = 0.0
+        for i in range(j, 0, -1):
+            c = customers[i - 1]
+            cumulative_load += q_day[c]
+            if cumulative_load > inst.Q + 1e-6:
+                break  # all longer segments from i-1 downward also exceed Q
+
+            route_customers = customers[i - 1:j]
+            cost, stops = _compute_route_cost(
+                route_customers, inst, depart_h, day, q_day, use_dynamic
+            )
+            seg_cost[(i - 1, j)] = cost
+            seg_stops[(i - 1, j)] = stops
+            seg_load[(i - 1, j)] = cumulative_load
+
+    # DP transitions using cached costs (O(n^2 * m) lookups only)
     for k in range(1, max_routes + 1):
         for j in range(1, num_cust + 1):
             for i in range(j, 0, -1):
-                # Route k serves customers[i-1 .. j-1]
+                key = (i - 1, j)
+                if key not in seg_cost:
+                    break  # capacity exceeded; shorter segments also infeasible
+
                 if V[i - 1][k - 1] >= INF:
-                    continue  # no valid partition before this point
+                    continue
 
-                route_customers = customers[i - 1:j]
-
-                # Check vehicle capacity
-                load = sum(q_day[c] for c in route_customers)
-                if load > inst.Q + 1e-6:
-                    break  # more customers only increases load
-
-                cost, stops = _compute_route_cost(
-                    route_customers, inst, depart_h, day, q_day, use_dynamic
-                )
-
-                total = V[i - 1][k - 1] + cost
+                total = V[i - 1][k - 1] + seg_cost[key]
                 if total < V[j][k]:
                     V[j][k] = total
                     pred[j][k] = i - 1
-                    route_info[(i - 1, j, k)] = (cost, stops)
+                    route_info[(i - 1, j, k)] = (seg_cost[key], seg_stops[key])
 
     # Find best number of routes (fewest cost, respecting max_routes)
     best_k = None
@@ -136,8 +153,7 @@ def td_split(
         i = pred[j][cur_k]
         if i < 0:
             # Fallback for remaining unassigned customers
-            for ci in range(j):
-                c = customers[ci]
+            for c in customers[:j]:
                 cost_c, stops_c = _compute_route_cost(
                     [c], inst, depart_h, day, q_day, use_dynamic
                 )
@@ -319,6 +335,14 @@ def _decode_day(
     afternoon_custs = _nn_order(afternoon_set, inst)
 
     all_routes: List[Route] = []
+
+    # Allocate vehicles proportionally between shifts.
+    # Since morning [8-12] and afternoon [14-18] don't overlap,
+    # the same vehicles can serve both shifts. Each shift gets up to m.
+    # But we also compute proportional allocation for better route quality.
+    n_morning = len(morning_custs)
+    n_afternoon = len(afternoon_custs)
+    total = n_morning + n_afternoon
 
     for group, slots in [(morning_custs, morning_slots),
                          (afternoon_custs, afternoon_slots)]:

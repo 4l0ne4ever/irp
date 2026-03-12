@@ -9,13 +9,15 @@ from src.core.inventory import (
     simulate_inventory, check_feasibility, check_overstock,
     compute_inventory_cost,
 )
-from src.core.instance import Instance, compute_distance_matrix
+from src.core.instance import Instance
 
 
 def _make_tiny_instance(n=3, T=3):
     """Create a minimal valid instance for testing."""
     coords = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=float)
-    dist = compute_distance_matrix(coords)
+    # Inline Euclidean for test only (no OSRM needed for 4-point unit test)
+    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+    dist = np.sqrt(np.sum(diff ** 2, axis=2))
     return Instance(
         name="test", n=n, T=T, m=1,
         coords=coords, dist=dist,

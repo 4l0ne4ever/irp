@@ -2,13 +2,12 @@
 Real road distance computation using OSRM (Open Source Routing Machine).
 
 Uses the public OSRM demo server to compute actual driving distances
-between GPS coordinates. Falls back to Haversine if OSRM is unavailable.
+between GPS coordinates. OSRM is the sole distance source; no fallback.
 
 OSRM Table API docs: http://project-osrm.org/docs/v5.24.0/api/#table-service
 """
 
 import logging
-import math
 import time as _time
 from typing import Optional, Tuple
 
@@ -22,32 +21,6 @@ OSRM_MAX_COORDS_PER_REQUEST = 100  # Safe limit for public server
 OSRM_REQUEST_TIMEOUT = 60  # seconds
 OSRM_RETRY_DELAY = 2.0     # seconds between retries
 OSRM_MAX_RETRIES = 3
-
-
-def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-    """Haversine distance between two GPS points in km."""
-    R = 6371.0
-    dlon = math.radians(lon2 - lon1)
-    dlat = math.radians(lat2 - lat1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) ** 2)
-    return R * 2 * math.asin(math.sqrt(a))
-
-
-def _haversine_matrix(coords_gps: np.ndarray) -> np.ndarray:
-    """Compute distance matrix using Haversine (fallback)."""
-    N = coords_gps.shape[0]
-    dist = np.zeros((N, N))
-    for i in range(N):
-        for j in range(i + 1, N):
-            d = _haversine_km(
-                coords_gps[i, 0], coords_gps[i, 1],
-                coords_gps[j, 0], coords_gps[j, 1],
-            )
-            dist[i, j] = d
-            dist[j, i] = d
-    return dist
 
 
 def _coords_to_osrm_string(coords_gps: np.ndarray) -> str:
@@ -80,13 +53,14 @@ def compute_osrm_distance_matrix(
     dist_matrix : np.ndarray
         Shape (N, N) distance matrix in km.
     used_osrm : bool
-        True if OSRM was used, False if fell back to Haversine.
+        Always True (OSRM is the sole distance source).
+
+    Raises
+    ------
+    RuntimeError
+        If OSRM is unavailable after all retries.
     """
-    try:
-        import requests
-    except ImportError:
-        logger.warning("requests not installed. Falling back to Haversine distance.")
-        return _haversine_matrix(coords_gps), False
+    import requests
 
     N = coords_gps.shape[0]
 
@@ -130,12 +104,12 @@ def _osrm_table_request(
             distances_km = (distances_km + distances_km.T) / 2.0
             np.fill_diagonal(distances_km, 0.0)
 
-            # Replace any null/None with Haversine fallback
+            # Replace any null/None — raise error
             null_mask = np.isnan(distances_km) | (distances_km < 0)
             if np.any(null_mask):
-                haversine = _haversine_matrix(coords_gps)
-                distances_km[null_mask] = haversine[null_mask]
-                logger.warning(f"Replaced {null_mask.sum()} null OSRM entries with Haversine")
+                raise RuntimeError(
+                    f"OSRM returned {null_mask.sum()} null/negative distance entries"
+                )
 
             logger.info(f"OSRM distance matrix computed: {distances_km.shape}, "
                         f"range [{distances_km[distances_km > 0].min():.2f}, "
@@ -151,8 +125,8 @@ def _osrm_table_request(
             if attempt < OSRM_MAX_RETRIES - 1:
                 _time.sleep(OSRM_RETRY_DELAY)
 
-    logger.warning("All OSRM attempts failed. Falling back to Haversine distance.")
-    return _haversine_matrix(coords_gps), False
+    logger.error("All OSRM attempts failed.")
+    raise RuntimeError("OSRM distance computation failed after all retries")
 
 
 def _osrm_sub_table(
@@ -231,8 +205,6 @@ def _osrm_table_batched(
         chunks.append(list(range(start, end)))
 
     dist_matrix = np.zeros((N, N))
-    used_osrm = True
-    haversine = None  # Lazily computed if needed
 
     n_chunks = len(chunks)
     total_pairs = n_chunks * n_chunks
@@ -273,14 +245,9 @@ def _osrm_table_batched(
                     for ci, dst_idx in enumerate(chunk_j):
                         dist_matrix[src_idx, dst_idx] = sub_dist[ri, ci]
             else:
-                # Fallback to Haversine for this chunk pair
-                logger.warning(f"Chunk pair ({i},{j}) failed, using Haversine fallback")
-                if haversine is None:
-                    haversine = _haversine_matrix(coords_gps)
-                used_osrm = False
-                for src_idx in chunk_i:
-                    for dst_idx in chunk_j:
-                        dist_matrix[src_idx, dst_idx] = haversine[src_idx, dst_idx]
+                raise RuntimeError(
+                    f"OSRM chunk pair ({i},{j}) failed after all retries"
+                )
 
             _time.sleep(1.0)  # Rate limiting between requests
 
@@ -288,12 +255,12 @@ def _osrm_table_batched(
     dist_matrix = (dist_matrix + dist_matrix.T) / 2.0
     np.fill_diagonal(dist_matrix, 0.0)
 
-    if used_osrm:
+    if dist_matrix[dist_matrix > 0].size > 0:
         logger.info(f"OSRM batched distance matrix computed: ({N},{N}), "
                     f"range [{dist_matrix[dist_matrix > 0].min():.2f}, "
                     f"{dist_matrix.max():.2f}] km")
 
-    return dist_matrix, used_osrm
+    return dist_matrix, True
 
 
 def get_osrm_route_geometry(

@@ -16,7 +16,7 @@ from src.core.constants import (
     GA_TOURNAMENT_K, GA_CROSSOVER_PROB, GA_MUTATION_RATE_Y,
     GA_MUTATION_RATE_PI, GA_LOCAL_SEARCH_RATE, GA_TIME_LIMIT,
 )
-from .chromosome import Chromosome, random_chromosome, copy_chromosome
+from .chromosome import Chromosome, random_chromosome, savings_chromosome, copy_chromosome
 from .fitness import evaluate, compare_fitness
 from .operators import crossover, mutate, repair
 from .local_search import apply_local_search
@@ -88,6 +88,12 @@ class HGA:
         )
 
         # Evolution loop
+        stagnation_count = 0
+        prev_best = self.best_fitness
+        stagnation_limit = max(30, self.generations // 5)
+        restart_count = 0
+        max_restarts = 2  # Allow up to 2 diversification restarts
+
         for gen in range(self.generations):
             elapsed = time.time() - start_time
             if elapsed > self.time_limit:
@@ -95,6 +101,33 @@ class HGA:
                 break
 
             self._evolve_generation(gen)
+
+            # Early termination: stop if no improvement for many generations
+            if self.best_fitness < prev_best - 1e-2:
+                prev_best = self.best_fitness
+                stagnation_count = 0
+            else:
+                stagnation_count += 1
+            if stagnation_count >= stagnation_limit:
+                if restart_count < max_restarts and self.best_solution.feasible:
+                    # Diversification restart: keep top 25%, regenerate rest
+                    restart_count += 1
+                    logger.info(f"Diversification restart {restart_count} at gen {gen}")
+                    n_keep = max(2, self.pop_size // 4)
+                    survivors = self.population[:n_keep]
+                    for _ in range(self.pop_size - n_keep):
+                        chrom = random_chromosome(self.inst, self.rng)
+                        repair(chrom, self.inst)
+                        f, s = evaluate(chrom, self.inst, use_dynamic=self.use_dynamic)
+                        survivors.append((chrom, f, s))
+                    self.population = survivors
+                    self.population.sort(key=lambda x: (not x[2].feasible, x[1]))
+                    stagnation_count = 0
+                elif self.best_solution.feasible:
+                    logger.info(f"Converged at generation {gen} "
+                                f"(no improvement for {stagnation_limit} gens, "
+                                f"{restart_count} restarts used)")
+                    break
 
             # Log convergence
             fitnesses = [f for _, f, _ in self.population]
@@ -158,11 +191,16 @@ class HGA:
         return self.best_solution
 
     def _initialize_population(self):
-        """Create initial population with random chromosomes."""
+        """Create initial population: 25% savings-based, 75% random."""
         self.population = []
 
-        for _ in range(self.pop_size):
-            chrom = random_chromosome(self.inst, self.rng)
+        n_savings = max(1, self.pop_size // 4)
+
+        for i in range(self.pop_size):
+            if i < n_savings:
+                chrom = savings_chromosome(self.inst, self.rng)
+            else:
+                chrom = random_chromosome(self.inst, self.rng)
             repair(chrom, self.inst)
             fitness, sol = evaluate(chrom, self.inst, use_dynamic=self.use_dynamic)
             self.population.append((chrom, fitness, sol))
@@ -219,14 +257,14 @@ class HGA:
         # Keep best pop_size
         self.population = new_pop[:self.pop_size]
 
-        # Local search on top individuals
-        n_ls = max(1, int(self.pop_size * GA_LOCAL_SEARCH_RATE))
+        # Local search on top 40% (increased from 20% for better quality)
+        n_ls = max(1, int(self.pop_size * 0.40))
         for i in range(min(n_ls, len(self.population))):
             chrom, fitness, sol = self.population[i]
             improved = apply_local_search(
                 chrom, self.inst,
                 use_dynamic=self.use_dynamic,
-                use_time_shift=self.use_dynamic,  # B: no TS, C: yes (DevGuide §4.3)
+                use_time_shift=self.use_dynamic,
                 rng=self.rng,
             )
             new_fitness, new_sol = evaluate(

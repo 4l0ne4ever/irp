@@ -26,8 +26,8 @@ class Instance:
     m: int              # Number of vehicles
 
     # Spatial — index 0 = depot, indices 1..n = customers
-    coords: np.ndarray  # (n+1, 2) GPS [lon, lat] or local [x, y] in km
-    dist: np.ndarray    # (n+1, n+1) distance matrix in km (OSRM road / Haversine / Euclidean)
+    coords: np.ndarray  # (n+1, 2) GPS [lon, lat]
+    dist: np.ndarray    # (n+1, n+1) OSRM road distance matrix in km
 
     # Inventory per customer — indices 0..n-1 map to customers 1..n
     U: np.ndarray       # (n,) max warehouse capacity
@@ -45,24 +45,6 @@ class Instance:
     c_d: float = C_D    # VND/km
     c_t: float = C_T    # VND/hour
     Q: float = DEFAULT_Q  # Vehicle capacity (units)
-
-
-def compute_distance_matrix(coords: np.ndarray) -> np.ndarray:
-    """
-    Compute Euclidean distance matrix from coordinates.
-
-    Parameters
-    ----------
-    coords : np.ndarray
-        Shape (N, 2) array of (x, y) coordinates.
-
-    Returns
-    -------
-    np.ndarray
-        Shape (N, N) symmetric distance matrix.
-    """
-    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
-    return np.sqrt(np.sum(diff ** 2, axis=2))
 
 
 def validate_instance(inst: Instance) -> List[str]:

@@ -234,9 +234,9 @@ def build_and_solve_milp(
                 values = [1.0, -inst.e[ci]]
                 h.addRow(0, highspy.kHighsInf, 2, indices, values)
 
-                # w[i,k,t] <= l_i * z[i,k,t] + M(1-z[i,k,t])
+                # w[i,k,t] <= l_i * z[i,k,t] + M(1-z[i,k,t])  =>  w + (M - l_i)*z <= M
                 indices = [w_idx[(i, k, t)], z_idx[(i, k, t)]]
-                values = [1.0, -(inst.l[ci] + BIG_M)]
+                values = [1.0, BIG_M - inst.l[ci]]
                 h.addRow(-highspy.kHighsInf, BIG_M, 2, indices, values)
 
     # Solve

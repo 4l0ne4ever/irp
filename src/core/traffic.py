@@ -28,10 +28,10 @@ def igp_travel_time(distance_km: float, depart_h: float) -> float:
     float
         Travel time in hours.
     """
-    if distance_km <= 0.0:
-        return 0.0
     if distance_km < 0.0:
         raise ValueError(f"distance_km must be >= 0, got {distance_km}")
+    if distance_km <= 0.0:
+        return 0.0
 
     # Normalize departure to [0, 24)
     depart_h = depart_h % H

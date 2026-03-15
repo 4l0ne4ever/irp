@@ -54,6 +54,7 @@ class Solution:
     tw_violations: int = 0
     stockout_violations: int = 0
     capacity_violations: int = 0
+    vehicle_violations: int = 0  # routes > m on any day (baselines)
 
     # Penalty values
     penalty_stockout: float = 0.0
@@ -106,6 +107,10 @@ def validate_solution(sol: Solution, inst: Instance) -> List[str]:
             prev_time = route.depart_h
             prev_node = 0  # depot
 
+            # P2: Recompute arrival times to verify time propagation
+            current_time = route.depart_h
+            prev_node = 0
+
             for cust_1based, qty, arrival in route.stops:
                 cust_idx = cust_1based - 1  # 0-based for arrays
 
@@ -124,8 +129,22 @@ def validate_solution(sol: Solution, inst: Instance) -> List[str]:
                         f"arrival {arrival:.3f} > l={inst.l[cust_idx]:.1f}"
                     )
 
+                # Verify arrival is consistent with travel time from prev_node (IGP model).
+                # Tolerance 0.05h (~3 min) allows solutions built with static speed to pass.
+                dist = inst.dist[prev_node, cust_1based]
+                tt = igp_travel_time(dist, current_time)
+                arrival_computed = current_time + tt
+                arrival_effective = max(arrival_computed, inst.e[cust_idx])
+                if abs(arrival_effective - arrival) > 0.05:
+                    errors.append(
+                        f"Day {t}, Customer {cust_1based}: "
+                        f"arrival {arrival:.3f} inconsistent with travel time "
+                        f"(computed {arrival_effective:.3f})"
+                    )
+
                 prev_node = cust_1based
                 prev_time = arrival + inst.s[cust_idx]
+                current_time = prev_time
 
     # Check inventory feasibility
     I = np.copy(inst.I0)

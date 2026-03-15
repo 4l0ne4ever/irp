@@ -17,6 +17,25 @@ from .chromosome import Chromosome, copy_chromosome
 from .decode import decode_chromosome, _compute_route_cost, _decompose_route_cost, _decode_day
 
 
+def _solution_to_pi(sol: Solution, n: int) -> np.ndarray:
+    """
+    Re-encode solution schedule into a giant-tour permutation π.
+    Order = first occurrence of each customer across days (day, route, stop).
+    Ensures 2-opt/Or-opt improvements are persisted to the genotype.
+    """
+    order: List[int] = []
+    seen = set()
+    for t in range(len(sol.schedule)):
+        for route in sol.schedule[t]:
+            for (cust_1based, _, _) in route.stops:
+                c = cust_1based - 1
+                if c not in seen:
+                    seen.add(c)
+                    order.append(c)
+    order += [c for c in range(n) if c not in seen]
+    return np.array(order, dtype=np.int32)
+
+
 def two_opt_route(
     route: Route,
     inst: Instance,
@@ -396,9 +415,7 @@ def apply_local_search(
 
         # Inter-route: Or-opt (relocate customers between routes)
         if len(sol.schedule[t]) >= 2:
-            old_routes = sol.schedule[t]
-            new_routes = or_opt_day(old_routes, inst, use_dynamic=use_dynamic)
-            sol.schedule[t] = new_routes
+            or_opt_day(sol.schedule[t], inst, use_dynamic=use_dynamic)
             any_improved = True
 
     if any_improved:
@@ -409,6 +426,9 @@ def apply_local_search(
                 d_cost, t_cost = _decompose_route_cost(route, inst, use_dynamic)
                 sol.cost_distance += d_cost
                 sol.cost_time += t_cost
+
+    # Persist current route order back to π so 2-opt/Or-opt improvements are kept (P1 fix).
+    improved.pi = _solution_to_pi(sol, inst.n)
 
     improved._fitness = sol.fitness
 

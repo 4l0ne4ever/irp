@@ -328,11 +328,13 @@ def _decode_day(
     morning_set = [c for c in day_customers_set if inst.e[c] < 13.0]
     afternoon_set = [c for c in day_customers_set if inst.e[c] >= 13.0]
 
-    # Use nearest-neighbor ordering for each group.
-    # Pi-based ordering produces poor routes when the day's subset
-    # is scattered across the giant tour (common for n>=50).
-    morning_custs = _nn_order(morning_set, inst)
-    afternoon_custs = _nn_order(afternoon_set, inst)
+    # Order each group by giant tour π (DevGuide: sort {i : Y_it=1} by order of π for TD-Split).
+    # pi_position[c] = index of customer c in permutation pi.
+    pi_position = np.empty(inst.n, dtype=np.int32)
+    for k in range(inst.n):
+        pi_position[pi[k]] = k
+    morning_custs = sorted(morning_set, key=lambda c: pi_position[c])
+    afternoon_custs = sorted(afternoon_set, key=lambda c: pi_position[c])
 
     all_routes: List[Route] = []
 

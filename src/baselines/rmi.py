@@ -106,15 +106,20 @@ def solve_rmi(inst: Instance) -> Solution:
     cost_inventory = compute_inventory_cost(I_matrix, inst)
     violations = check_feasibility(I_matrix, inst)
 
+    # P1: Flag when baseline uses more than m vehicles on any day
+    m = inst.m
+    vehicle_violations = sum(max(0, len(day_routes) - m) for day_routes in schedule)
+
     return Solution(
         schedule=schedule,
         cost_inventory=cost_inventory,
         cost_distance=total_dist_cost,
         cost_time=total_time_cost,
-        feasible=(len(violations) == 0 and total_tw_violations == 0),
+        feasible=(len(violations) == 0 and total_tw_violations == 0 and vehicle_violations == 0),
         tw_violations=total_tw_violations,
         stockout_violations=len(violations),
         capacity_violations=0,
+        vehicle_violations=vehicle_violations,
         penalty_stockout=LAMBDA_STOCKOUT * len(violations),
         inventory_trace=I_matrix,
         delivery_matrix=q_matrix,

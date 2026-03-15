@@ -220,6 +220,87 @@ def run_single(
     return result
 
 
+def run_single_from_instance(
+    instance: Instance,
+    scenario: str,
+    scale: str = "upload",
+    pop_size: int = GA_POP_SIZE,
+    generations: int = GA_GENERATIONS,
+    time_limit: float = GA_TIME_LIMIT,
+    output_dir: str = "results",
+    seed: int = 42,
+) -> tuple:
+    """
+    Run a single experiment from a pre-built, validated Instance (e.g. from upload).
+    Does not load from disk. Returns (result_dict, run_dir_path).
+
+    Parameters
+    ----------
+    instance : Instance
+        Validated instance with dist already set.
+    scenario : str
+        P, A, B, or C.
+    scale : str
+        Scale label for run folder name (default "upload").
+    pop_size, generations, time_limit : int/float
+        HGA parameters (used only for B/C).
+    output_dir : str
+        Parent directory for the run subfolder.
+    seed : int
+        Random seed for B/C.
+
+    Returns
+    -------
+    (Dict, str)
+        result_dict (same shape as run_single), run_directory path.
+    """
+    n, m = instance.n, instance.m
+    os.makedirs(output_dir, exist_ok=True)
+    log_path = os.path.join(output_dir, "run_log.txt")
+    file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"))
+    file_handler.setLevel(logging.INFO)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(file_handler)
+    convergence = None
+    t0 = time.time()
+    try:
+        logger.info("Run started: scenario=%s scale=%s n=%d m=%d", scenario, scale, n, m)
+        if scenario == "P":
+            logger.info("Running Scenario P (Periodic)...")
+            sol = solve_periodic(instance)
+        elif scenario == "A":
+            logger.info("Running Scenario A (RMI)...")
+            sol = solve_rmi(instance)
+        elif scenario == "B":
+            logger.info("Running Scenario B (IRP-TW-Static, HGA)...")
+            hga = HGA(instance, pop_size=pop_size, generations=generations,
+                      time_limit=time_limit, use_dynamic=False, seed=seed)
+            sol = hga.run()
+            convergence = hga.convergence_log
+        elif scenario == "C":
+            logger.info("Running Scenario C (IRP-TW-DT, HGA)...")
+            hga = HGA(instance, pop_size=pop_size, generations=generations,
+                      time_limit=time_limit, use_dynamic=True, seed=seed)
+            sol = hga.run()
+            convergence = hga.convergence_log
+        else:
+            raise ValueError(f"Unknown scenario: {scenario}")
+
+        elapsed = time.time() - t0
+        logger.info("Solver finished in %.2f s; building result...", elapsed)
+        result = _make_result(scenario, scale, n, m, seed, sol, elapsed,
+                              inst=instance, convergence=convergence)
+
+        run_dir = _save_run_output(output_dir, scenario, scale, n, seed, instance, sol, result,
+                                   convergence=convergence)
+        logger.info("Run complete. Output in %s", run_dir)
+        return result, run_dir
+    finally:
+        root_logger.removeHandler(file_handler)
+        file_handler.close()
+
+
 def _make_result(
     scenario: str, scale: str, n: int, m: int, seed: int,
     sol: Solution, elapsed: float,
@@ -295,6 +376,7 @@ def _make_result(
         "tw_violations": sol.tw_violations,
         "stockout_violations": sol.stockout_violations,
         "capacity_violations": sol.capacity_violations,
+        "vehicle_violations": getattr(sol, "vehicle_violations", 0),
         "tw_compliance_rate": round(tw_compliance, 1),
         # Delivery statistics
         "n_deliveries": n_deliveries,
@@ -388,6 +470,7 @@ def _save_detailed_metrics(
     lines.append(f"  TW Violations:        {result['tw_violations']}")
     lines.append(f"  Stockout Violations:  {result['stockout_violations']}")
     lines.append(f"  Capacity Violations:  {result['capacity_violations']}")
+    lines.append(f"  Vehicle Violations:   {result.get('vehicle_violations', 0)}")
     lines.append(f"  TW Compliance Rate:   {result['tw_compliance_rate']}%")
 
     lines.append("")

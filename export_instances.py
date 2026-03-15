@@ -96,9 +96,14 @@ for instance_name in instances_to_export:
                 record[f"demand_day{t}"] = float(demand[i, t])
             csv_records.append(record)
         
+        m = int(meta.get("m", 2))
+        depot_lon, depot_lat = float(coords[0, 0]), float(coords[0, 1])
+        header_line = f"# m={m},depot_lon={depot_lon},depot_lat={depot_lat}\n"
         df = pd.DataFrame(csv_records)
         csv_file = export_dir / f"{instance_name}_customers.csv"
-        df.to_csv(csv_file, index=False)
+        with open(csv_file, "w") as f:
+            f.write(header_line)
+            df.to_csv(f, index=False)
         size_kb = csv_file.stat().st_size / 1024
         print(f"✓ {instance_name}_customers.csv ({size_kb:.1f} KB)")
         

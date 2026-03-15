@@ -245,6 +245,7 @@ with config:
             scenario = st.selectbox("Scenario", ["P", "A", "B", "C"], index=3, key="scenario_upload")
         with row2[1]:
             uploaded_file = st.file_uploader("Upload JSON or CSV", type=["json", "csv"], key="uploader")
+        st.caption("First load computes OSRM road distances (30–90s for n≈100). Later runs use cache.")
         instance_for_run = None
         n, m = None, None
 
@@ -271,9 +272,13 @@ with config:
                             depot_lon = st.number_input("Depot longitude", value=105.864567, format="%.6f", key="depot_lon")
                         with c2:
                             depot_lat = st.number_input("Depot latitude", value=20.996789, format="%.6f", key="depot_lat")
-                        inst, _ = _load_csv_cached(file_bytes, depot_lon, depot_lat)
+                        with st.spinner(
+                            "Loading instance… Computing OSRM road distances (30–90s for large n). Please wait."
+                        ):
+                            inst, _ = _load_csv_cached(file_bytes, depot_lon, depot_lat)
                     else:
-                        inst, _ = _load_json_cached(file_bytes)
+                        with st.spinner("Loading instance… Computing OSRM distance matrix (may take 30–90s for large n)…"):
+                            inst, _ = _load_json_cached(file_bytes)
                     n, m = inst.n, inst.m
                     instance_for_run = inst
                     st.session_state.upload_instance = inst
@@ -382,7 +387,7 @@ if st.session_state.run_in_progress and st.session_state.run_future is not None:
         st.session_state.current_run_output_dir = None
         st.rerun()
     else:
-        time.sleep(2)
+        time.sleep(1)
         st.rerun()
 
 # ========== Error banner ==========
@@ -402,7 +407,8 @@ if preview_map and not st.session_state.run_in_progress:
 # ========== While calculating ==========
 if st.session_state.run_in_progress:
     st.subheader("Solver running")
-    st.spinner("Calculating...")
+    with st.spinner("Solver running… Log updates every second below. Do not refresh."):
+        st.info("Run in progress. The **Run log** section below streams solver output; results will appear when the run finishes.")
 
 # ========== Results (pop up on screen — no export) ==========
 if st.session_state.last_result is not None and not st.session_state.run_in_progress:

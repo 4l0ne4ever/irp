@@ -1,6 +1,6 @@
 """
-In-memory job registry and background run: solver + simulation replay.
-Run directory: /tmp/irp_runs/<run_id>/
+Planning: background solver only → run_complete.
+Monitoring: optional replay per day via /monitor/start, stoppable via /monitor/stop.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ KEEP_RECENT = 10
 class JobState(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
-    SIMULATING = "simulating"
     COMPLETE = "complete"
     ERROR = "error"
 
@@ -43,6 +42,7 @@ class Job:
 _jobs: Dict[str, Job] = {}
 _upload_tokens: Dict[str, Any] = {}
 _lock = threading.Lock()
+_monitor_stop_events: Dict[str, threading.Event] = {}
 
 
 def register_upload_instance(token: str, inst) -> None:
@@ -68,7 +68,7 @@ def get_job(run_id: str) -> Optional[Job]:
         return _jobs.get(run_id)
 
 
-def _cleanup_runs():
+def _cleanup_runs() -> None:
     base = RUNS_ROOT
     if not os.path.isdir(base):
         return
@@ -82,6 +82,71 @@ def _cleanup_runs():
             shutil.rmtree(d, ignore_errors=True)
         except Exception:
             pass
+
+
+def stop_monitor_replay(run_id: str) -> bool:
+    with _lock:
+        ev = _monitor_stop_events.get(run_id)
+    if ev is None:
+        return False
+    ev.set()
+    return True
+
+
+def start_monitor_replay_thread(
+    run_id: str,
+    *,
+    day: int,
+    hours_per_real_second: float,
+) -> None:
+    job = get_job(run_id)
+    if job is None or job.state != JobState.COMPLETE or not job.run_dir:
+        raise ValueError("invalid job for monitoring")
+    run_dir = job.run_dir
+
+    stop_ev = threading.Event()
+    with _lock:
+        old = _monitor_stop_events.get(run_id)
+        if old is not None:
+            old.set()
+        _monitor_stop_events[run_id] = stop_ev
+
+    def _work() -> None:
+        cancelled = False
+        try:
+            from src.experiments.runner import load_planning_artifacts
+            from src.simulation.replay import run_simulation_replay
+
+            inst, sol = load_planning_artifacts(run_dir)
+            cancelled = bool(
+                run_simulation_replay(
+                    inst,
+                    sol,
+                    run_id,
+                    day=day,
+                    hours_per_real_second=hours_per_real_second,
+                    stop_event=stop_ev,
+                )
+            )
+        except Exception as e:
+            logger.exception("Monitor replay failed")
+            outbound_queue.put(
+                {"type": "monitor_error", "run_id": run_id, "day": day, "message": str(e)}
+            )
+        finally:
+            with _lock:
+                if _monitor_stop_events.get(run_id) is stop_ev:
+                    _monitor_stop_events.pop(run_id, None)
+            outbound_queue.put(
+                {
+                    "type": "sim_complete",
+                    "run_id": run_id,
+                    "day": day,
+                    "cancelled": cancelled,
+                }
+            )
+
+    threading.Thread(target=_work, daemon=True, name=f"mon-{run_id[:8]}-d{day}").start()
 
 
 def start_run_thread(
@@ -98,14 +163,13 @@ def start_run_thread(
     out_dir = os.path.join(RUNS_ROOT, job.run_id)
     os.makedirs(out_dir, exist_ok=True)
 
-    def _work():
+    def _work() -> None:
         try:
             with _lock:
                 job.state = JobState.RUNNING
             from src.experiments.runner import run_single_from_instance
-            from src.simulation.replay import run_simulation_replay
 
-            result, run_dir, sol = run_single_from_instance(
+            result, run_dir, _sol = run_single_from_instance(
                 instance,
                 scenario=scenario,
                 scale=scale,
@@ -125,16 +189,6 @@ def start_run_thread(
                 job.result = result
                 job.map_html = map_html
                 job.run_dir = run_dir
-                job.state = JobState.SIMULATING
-            outbound_queue.put(
-                {"type": "phase", "run_id": job.run_id, "phase": "simulating"}
-            )
-            try:
-                if sol is not None:
-                    run_simulation_replay(instance, sol, job.run_id)
-            except Exception as e:
-                logger.warning("Simulation replay skipped: %s", e)
-            with _lock:
                 job.state = JobState.COMPLETE
             outbound_queue.put({"type": "run_complete", "run_id": job.run_id})
             _cleanup_runs()

@@ -1,6 +1,8 @@
 """
-FastAPI: REST (/instances, /upload, /run, /result/{id}) + WebSocket /ws.
-Run from repo root:  uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+FastAPI: REST + WebSocket /ws.
+Planning: /instances, /upload, /run, /result/{id}
+Monitoring: /monitor/start, /monitor/stop
+Run: PYTHONPATH=. uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -26,6 +28,8 @@ from pydantic import BaseModel, Field
 from backend import job_manager
 from backend.kafka_bridge import start_kafka_forwarder
 from backend.realtime import outbound_queue
+from backend.monitor_context import build_monitor_context
+from backend.telemetry_alert_worker import start_telemetry_alert_worker
 
 INSTANCES_DIR = ROOT / "src" / "data" / "irp-instances"
 
@@ -48,6 +52,16 @@ class RunIn(BaseModel):
     source: str = Field(..., pattern="^(builtin|upload)$")
     instance_key: Optional[str] = None
     upload_token: Optional[str] = None
+
+
+class MonitorStartIn(BaseModel):
+    run_id: str
+    day: int = Field(ge=0, le=6)
+    speed_x: int = Field(default=60, ge=1, le=600, description="60=default replay rate; lower=slower, higher=faster")
+
+
+class MonitorStopIn(BaseModel):
+    run_id: str
 
 
 class ConnectionManager:
@@ -79,6 +93,7 @@ manager = ConnectionManager()
 @app.on_event("startup")
 async def _startup() -> None:
     start_kafka_forwarder()
+    start_telemetry_alert_worker()
     asyncio.create_task(_pump_outbound_queue())
 
 
@@ -187,6 +202,54 @@ def start_run(body: RunIn) -> Dict[str, str]:
         time_limit=body.time_limit,
     )
     return {"run_id": job.run_id}
+
+
+@app.post("/monitor/start")
+def monitor_start(body: MonitorStartIn) -> Dict[str, str]:
+    job = job_manager.get_job(body.run_id)
+    if job is None:
+        raise HTTPException(404, "Unknown run_id")
+    if job.state != job_manager.JobState.COMPLETE:
+        raise HTTPException(409, "Planning run not complete yet")
+    if not job.run_dir:
+        raise HTTPException(500, "Run directory missing")
+    art = os.path.join(job.run_dir, "artifacts.pkl")
+    if not os.path.isfile(art):
+        raise HTTPException(400, "No artifacts.pkl for this run (re-run planning)")
+    hours_per_real_second = max(0.05, body.speed_x / 60.0)
+    try:
+        job_manager.start_monitor_replay_thread(
+            body.run_id, day=body.day, hours_per_real_second=hours_per_real_second
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"status": "started"}
+
+
+@app.post("/monitor/stop")
+def monitor_stop(body: MonitorStopIn) -> Dict[str, str]:
+    if job_manager.get_job(body.run_id) is None:
+        raise HTTPException(404, "Unknown run_id")
+    job_manager.stop_monitor_replay(body.run_id)
+    return {"status": "stopped"}
+
+
+@app.get("/monitor/context")
+def monitor_context(run_id: str = Query(...), day: int = Query(0, ge=0, le=30)) -> JSONResponse:
+    """Depot, customer stops, planned route polylines, and suggested time window for the monitoring UI."""
+    job = job_manager.get_job(run_id)
+    if job is None:
+        raise HTTPException(404, "Unknown run_id")
+    if not job.run_dir:
+        raise HTTPException(500, "Run directory missing")
+    art = os.path.join(job.run_dir, "artifacts.pkl")
+    if not os.path.isfile(art):
+        raise HTTPException(400, "No artifacts.pkl for this run")
+    try:
+        payload = build_monitor_context(job.run_dir, day)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return JSONResponse(content=json.loads(json.dumps(payload, default=str)))
 
 
 @app.get("/result/{run_id}")

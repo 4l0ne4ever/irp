@@ -3,55 +3,90 @@
 **Stack:** React (Vite) · FastAPI · Kafka (KRaft, local) · existing `src/` solver  
 **Rule:** Solver logic untouched except one emit added to `hga.py`
 
-**Tiến độ code (tóm tắt):** Các phase 1–4 đã implement xong trong repo (backend, frontend, messaging, replay). Kafka: cài broker local theo `docs/ft.md` §11 — **không dùng Docker trong plan/repo**. Kiểm tra: **UI web** hoặc **gọi REST** (`/health`, `/instances`, `/run`, `/result/...`); live chart/telemetry cần broker chạy tại `KAFKA_BOOTSTRAP_SERVERS`.
+**Trạng thái code:** Planning chỉ chạy solver → `run_complete` + `artifacts.pkl`. Monitoring: tab riêng, `POST /monitor/start|stop`, replay theo `day`, WS `sim_complete` / `monitor_error`. TW violation: consumer riêng `backend/telemetry_alert_worker.py` → topic `irp-alerts`.
 
-### Quy trình làm việc (đề xuất cho phase mới hoặc refactor)
+---
 
-1. **Backend và frontend tách nhau:** Trong một phase, ưu tiên xong **một phía** (API + contract ổn định *hoặc* UI với mock/fixture) rồi mới ghép. Bước **đồng bộ** là milestone riêng: cùng `RunIn`/JSON WS, URL env, CORS.
-2. **Cổng nghiệm thu theo phase:** Chỉ bắt đầu phase tiếp theo khi checklist phase hiện tại đạt (dưới đây). Không “nhảy” phase.
-3. **Cách test:** Ưu tiên **OpenAPI `/docs`**, `curl`, hoặc **TestClient** cho backend; **`npm run build`** + chạy dev cho frontend; tích hợp cuối phase bằng UI thật hoặc REST như `README.md`.
+## Two modes
 
-| Phase | Nghiệm thu backend (tối thiểu) | Nghiệm thu frontend (tối thiểu) | Đồng bộ |
-| ----- | ------------------------------ | --------------------------------- | ------- |
-| 1 | `GET /health`, `GET /instances`, `POST /upload` + `POST /run` trả `run_id`, `GET /result/{id}` tiến trạng; job chạy nền | Form upload + chọn built-in (có thể trỏ mock API trước) | `VITE_API_URL`, cookie/CORS, body khớp `RunIn` |
-| 2 | Kafka consumer → WS đẩy `convergence` (broker bật); HGA emit | Chart nhận điểm từ WS / mock cùng shape message | Cùng `run_id` trên payload |
-| 3 | Replay → `telemetry` / `alert` lên WS | Map + feed cập nhật từ WS | — |
-| 4 | Lỗi `400` upload, `run_error` trên WS | KPI, preset, ẩn GA cho P/A | Một lượt chạy UI từ đầu đến cuối |
+**Planning mode** — user cấu hình và chạy HGA, xem kết quả tối ưu. Solver là trung tâm.
+
+**Monitoring mode** — user quan sát vận hành trong ngày. Simulation replay là trung tâm. Phát hiện vi phạm, xem trạng thái từng xe và từng khách hàng theo thời gian thực.
+
+Hai mode dùng chung backend và Kafka pipeline. Switch bằng tab trên header.
 
 ---
 
 ## Architecture
 
 ```
-React (Vite)
-  └─ REST + WebSocket ──► FastAPI
-                              ├─ produce ──► Kafka
-                              │                ├── convergence-log
-                              │                ├── vehicle-telemetry
-                              │                └── irp-alerts
-                              └─ consume ◄─── Kafka
-                              └─ import ────► src/ solver
+┌─────────────────────────────────────────────────────────────┐
+│                     React (Vite)                            │
+│                                                             │
+│  [ Planning ]                    [ Monitoring ]             │
+│  ─────────────────────           ─────────────────────────  │
+│  Sidebar controls                Day selector               │
+│  Convergence chart               Vehicle status panel       │
+│  Result KPI cards                Customer status panel      │
+│  Static route map                Live ETA table             │
+│                                  Timeline bar               │
+│                                  Alert panel (primary)      │
+│                                  Live route map             │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ REST + WebSocket
+┌──────────────────────────▼──────────────────────────────────┐
+│                      FastAPI                                 │
+│                                                             │
+│  /run  /result  /upload  /instances  /monitor/start  /ws    │
+│                                                             │
+│  Background threads:                                        │
+│  - HGA solver (Planning)                                    │
+│  - Simulation replay (Monitoring)                           │
+│  - Alert consumer (Monitoring)                              │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ produce / consume
+┌──────────────────▼──────────────────────────────────────────┐
+│                 Kafka (KRaft, local)                         │
+│                                                             │
+│  convergence-log      ← HGA emits per generation           │
+│  vehicle-telemetry    ← replay.py emits per time step      │
+│  irp-alerts           ← alert consumer emits on violation  │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ import trực tiếp
+┌──────────────────▼──────────────────────────────────────────┐
+│                   src/ solver (unchanged)                    │
+│  Instance · run_single · HGA · distances · visualize        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**WebSocket message types:** `convergence` · `telemetry` · `alert` · `run_complete` · `run_error`
+**WebSocket message types:**
+
+| Type           | Mode       | Trigger                       |
+| -------------- | ---------- | ----------------------------- |
+| `convergence`  | Planning   | Mỗi HGA generation            |
+| `run_complete` | Planning   | Solver xong                   |
+| `run_error`    | Planning   | Exception trong solver thread |
+| `telemetry`    | Monitoring | Mỗi simulation time step      |
+| `alert`        | Monitoring | Violation phát hiện           |
+| `sim_complete` | Monitoring | Replay xong toàn bộ ngày      |
 
 ---
 
 ## File map
 
-| File                         | Status                         |
-| ---------------------------- | ------------------------------ |
-| `src/solver/hga.py`          | Done — Kafka emit per generation |
-| `src/experiments/runner.py`  | Done — `run_single_from_instance()` |
-| `src/data/upload_loader.py`  | Done                           |
-| `src/simulation/__init__.py` | Done                           |
-| `src/simulation/replay.py`   | Done                           |
-| `backend/main.py`            | Done                           |
-| `backend/kafka_bridge.py`    | Done                           |
-| `backend/job_manager.py`     | Done                           |
-| `frontend/` (Vite app)       | Done — gồm `RunControls.jsx`, `UploadForm.jsx`, các component chart/map |
-| `requirements.txt`           | Done                           |
-| `frontend/.env.example`      | Done — `VITE_API_URL` mẫu                                  |
+| File                         | Action                                    |
+| ---------------------------- | ----------------------------------------- |
+| `src/solver/hga.py`          | Modify — add Kafka emit per generation    |
+| `src/experiments/runner.py`  | Modify — add `run_single_from_instance()` |
+| `src/data/upload_loader.py`  | Create                                    |
+| `src/simulation/__init__.py` | Create                                    |
+| `src/simulation/replay.py`   | Create                                    |
+| `backend/main.py`            | Create                                    |
+| `backend/kafka_bridge.py`    | Create                                    |
+| `backend/telemetry_alert_worker.py` | Create — TW từ `vehicle-telemetry` → `irp-alerts` |
+| `backend/job_manager.py`     | Create                                    |
+| `frontend/src/`              | Create                                    |
+| `requirements.txt`           | Update                                    |
 
 ---
 
@@ -59,139 +94,238 @@ React (Vite)
 
 ### `Instance` dataclass
 
-- `@dataclass` — 14 required fields, 3 optional with defaults
-- `dist` is a **constructor param**, not post-assignment
-- `demand` must be `np.ndarray shape (n, T)` — not a list
-- `s` fills from `SERVICE_TIME` constant or per-customer CSV values
-- Correct constant names: `DEFAULT_T`, `DEFAULT_Q`, `SERVICE_TIME`, `C_D`, `C_T`
-- Always call `validate_instance(inst)` after construction — raise `RuntimeError` if errors
+- `@dataclass` — 14 required fields, 3 optional
+- `dist` là constructor param, không phải post-assignment
+- `demand` phải là `np.ndarray shape (n, T)` — không phải list
+- `s` fills từ `SERVICE_TIME` constant hoặc per-customer CSV values
+- Đúng tên constants: `DEFAULT_T`, `DEFAULT_Q`, `SERVICE_TIME`, `C_D`, `C_T`
+- Gọi `validate_instance(inst)` sau construction, raise `RuntimeError` nếu có lỗi
 
 ### `run_single`
 
-- Accepts P, A, B, C — all valid
-- Loads from disk only — cannot accept `Instance` directly
-- Does **not** return run directory path — reconstruct from `SCALE_CONFIGS`
-- Convergence data not in return dict — read `convergence.csv` from disk
+- Nhận P, A, B, C — cả 4 valid
+- Load từ disk, không nhận `Instance` trực tiếp
+- Không trả về run directory path — reconstruct từ `SCALE_CONFIGS`
+- Convergence data không có trong return dict — đọc `convergence.csv` từ disk
 
 ### `run_single_from_instance` (done)
 
-- Accepts pre-built `Instance` (dist already set at construction)
-- Returns `(result_dict, run_dir_path, solution)` — third value for replay
-- Reuses `_make_result` and `_save_run_output` unchanged
+- Nhận pre-built `Instance` (dist đã set tại construction)
+- Trả về `(result_dict, run_dir_path, solution)` — lưu `artifacts.pkl` trong `run_dir`
+- Reuse `_make_result` và `_save_run_output` không đổi
 
 ### `compute_osrm_distance_matrix`
 
 - Input: `np.ndarray (N, 2)` — `[lon, lat]`, index 0 = depot
-- Returns `(matrix_km, True)` — raises `RuntimeError` on failure
-- Auto-batches N > 100 — expect +16–25s latency
+- Raises `RuntimeError` khi fail — không silent return
+- Auto-batch N > 100 — thêm ~16–25s latency
 
 ### `get_osrm_route_geometry`
 
-- Returns `[[lat, lon], ...]` or **`None`** on failure (does not raise)
-- Used in simulation replay for road geometry per route
-- Handle `None` gracefully — fall back to waypoint teleport, log warning
+- Trả về `[[lat, lon], ...]` hoặc `None` — không raise
+- Dùng trong replay để lấy road geometry
+- Handle `None`: fallback waypoint teleport, log warning
 
 ---
 
 ## Kafka topics
 
-| Topic               | Emitted by                      | Consumed by  | When                  |
-| ------------------- | ------------------------------- | ------------ | --------------------- |
-| `convergence-log`   | `hga.py`                        | FastAPI → WS | Each HGA generation   |
-| `vehicle-telemetry` | `simulation/replay.py`          | FastAPI → WS | Each sim time step    |
-| `irp-alerts`        | consumer of `vehicle-telemetry` | FastAPI → WS | On violation detected |
+| Topic               | Emitted by             | Consumed by                                                                           |
+| ------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
+| `convergence-log`   | `hga.py`               | FastAPI → WS → ConvergenceChart                                                       |
+| `vehicle-telemetry` | `simulation/replay.py` | FastAPI → WS → RouteMap, VehiclePanel, ETATable, AlertConsumer                        |
+| `irp-alerts`        | alert consumer         | FastAPI → WS → AlertPanel, RouteMap highlight, ETATable highlight, VehiclePanel badge |
+
+`irp-alerts` fan-out vào nhiều components đồng thời — đây là điểm khác biệt so với run UI thuần.
 
 ### Alert types
 
-| Type             | Condition                                     |
-| ---------------- | --------------------------------------------- |
-| `tw_violation`   | `eta_h > planned_arrival_h + 0.25`            |
-| `stockout_risk`  | Customer inventory → 0 before vehicle arrives |
-| `route_complete` | Vehicle finishes all stops for the day        |
+| Type             | Condition                               | Fan-out                                                                      |
+| ---------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| `tw_violation`   | `eta_h > planned_arrival_h + 0.25`      | AlertPanel · RouteMap xe + stop đỏ · ETATable row đỏ · VehiclePanel badge đỏ |
+| `stockout_risk`  | Inventory customer → 0 trước khi xe đến | AlertPanel · CustomerPanel highlight vàng                                    |
+| `route_complete` | Xe hoàn thành toàn bộ stops trong ngày  | AlertPanel · VehiclePanel status done                                        |
 
 ---
 
 ## Backend endpoints
 
-| Endpoint           | Method    | Description                                                    |
-| ------------------ | --------- | -------------------------------------------------------------- |
-| `/instances`       | GET       | List built-in instances from `src/data/irp-instances/`         |
-| `/run`             | POST      | Start solver + simulation, returns `run_id`                    |
-| `/result/{run_id}` | GET       | Returns result dict + map HTML                                 |
-| `/upload`          | POST      | Parse JSON/CSV, call `upload_loader`, return instance metadata |
-| `/ws`              | WebSocket | Stream all Kafka events to frontend                            |
+| Endpoint           | Method    | Description                                    |
+| ------------------ | --------- | ---------------------------------------------- |
+| `/instances`       | GET       | List built-in instances                        |
+| `/run`             | POST      | Chạy solver, trả về `run_id`                   |
+| `/result/{run_id}` | GET       | Result dict + map HTML                         |
+| `/upload`          | POST      | Parse JSON/CSV, trả về instance metadata       |
+| `/monitor/start`   | POST      | Bắt đầu simulation replay cho `run_id` + `day` |
+| `/monitor/stop`    | POST      | Dừng replay đang chạy                          |
+| `/ws`              | WebSocket | Stream tất cả Kafka events                     |
+
+`/monitor/start` nhận `run_id` và `day` (0–6). Replay chỉ chạy schedule của ngày đó.
 
 ---
 
-## Frontend components
+## Planning mode — UI
 
-| Component          | Library                 | Notes                                                                     |
-| ------------------ | ----------------------- | ------------------------------------------------------------------------- |
-| `RunControls`      | —                       | Sidebar. Disabled when `runState !== idle`                                |
-| `KpiCards`         | —                       | 6 cards. Render on `run_complete`                                         |
-| `ConvergenceChart` | Recharts                | Live append per `convergence` event. Hidden for P/A                       |
-| `RouteMap`         | Leaflet + React-Leaflet | Animate vehicles per `telemetry`. Folium HTML in iframe for static result |
-| `AlertFeed`        | —                       | Prepend per `alert` event, newest first                                   |
-| `UploadForm`       | —                       | Show depot fields only for `.csv` uploads                                 |
+```
+┌──────────────┬───────────────────────────────────────────────┐
+│   Sidebar    │  KPI cards  (hiện sau run_complete)            │
+│              ├───────────────────────────────────────────────┤
+│  Source      │  Convergence chart  (Recharts, live update)   │
+│  Scenario    │  Best + Average traces. Ẩn cho P/A            │
+│  GA params   ├───────────────────────────────────────────────┤
+│  (ẩn P/A)   │  Static route map  (Folium HTML, iframe)       │
+│              │  Hiện sau run_complete                         │
+│  [▶ Run]     ├───────────────────────────────────────────────┤
+│              │  [→ Go to Monitoring]  (enable sau run xong)  │
+└──────────────┴───────────────────────────────────────────────┘
+```
 
-**State:** Single `RunContext` at root. `useWebSocket` hook dispatches by `type` into context.
+"Go to Monitoring" chỉ enable sau `run_complete`. Click thì switch sang Monitoring tab và tự load `run_id` vừa chạy.
 
-**Run states:** `idle` → `running` → `simulating` → `complete` / `error`
+---
+
+## Monitoring mode — UI
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Day selector: [Day 0] [Day 1] ... [Day 6]                   │
+│  Sim controls: [▶ Start]  [■ Stop]   Speed: [60x ▼]          │
+│  Timeline bar: 6h ─────────────●───────────────── 18h        │
+├──────────────────────┬───────────────────────────────────────┤
+│  Vehicle panel       │  Live route map  (Leaflet)            │
+│                      │                                       │
+│  V1  en_route   🟢   │  Xe di chuyển theo OSRM geometry      │
+│  V2  delivering 🟢   │  Màu xe: xanh=on-time, đỏ=violated   │
+│  V3  done       ⚫   │  Stop markers: pending/done/violated  │
+│                      │  Alert highlights real-time           │
+│  Load: 240/500       │                                       │
+│  Stops: 4/7          │                                       │
+├──────────────────────┼───────────────────────────────────────┤
+│  ETA table           │  Alert panel  (primary feature)       │
+│                      │                                       │
+│  Stop  Plan   ETA  Δ │  🔴 TW violation — V1 → C14          │
+│  C12   09:30  09:35  │     ETA 10:45, window closes 10:30    │
+│  C14   10:30  10:45← │                                       │
+│        ↑ highlighted │  🟡 Stockout risk — C08              │
+│  C07   11:00  11:02  │     Inventory 12 units, ETA 13:20     │
+│                      │                                       │
+│                      │  ✅ Route complete — V2               │
+├──────────────────────┴───────────────────────────────────────┤
+│  Customer panel                                              │
+│                                                              │
+│  C01  ✅ delivered    C08  🟡 at risk    C14  ⏳ waiting     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Alert fan-out — cụ thể
+
+Một `tw_violation` Kafka event → dispatch vào `MonitoringContext` → tất cả component subscribe đồng thời update:
+
+- `AlertPanel` prepend entry
+- `RouteMap` xe đổi màu đỏ + stop marker đổi đỏ
+- `ETATable` row highlight đỏ
+- `VehiclePanel` badge đỏ trên xe đó
+
+Đây là lý do cần Kafka event-driven — không phải chỉ để pipe data vào một chỗ.
+
+---
+
+## `src/simulation/replay.py`
+
+Nhận `Instance` + `Solution` + `day` index.
+
+1. Với mỗi route trong `solution.schedule[day]`, gọi `get_osrm_route_geometry`
+2. Tính vị trí xe tại mỗi time step dùng IGP speed model (cùng logic với solver)
+3. Emit `vehicle-telemetry` messages theo sequence với `sim_time_h` tăng dần
+4. Tính inventory depletion cho từng customer giữa các deliveries
+5. Alert consumer chạy song song, check violations per telemetry message, emit `irp-alerts`
+
+Simulation speed mặc định 60x. Configurable qua `/monitor/start` payload.
+
+---
+
+## Frontend state
+
+**`RunContext`** (global, persist qua tab switch):
+
+- `planningState`: `idle` / `running` / `complete` / `error`
+- `monitoringState`: `idle` / `simulating` / `complete`
+- `currentRunId`: string | null
+- `currentResult`: result dict sau planning
+- `convergenceData`: array, append per `convergence` event
+- `selectedDay`: 0–6
+
+**`MonitoringContext`** (reset khi đổi day):
+
+- `vehicles`: map `vehicle_id → { lat, lon, status, stops_done, stops_total, load }`
+- `customers`: map `customer_id → { status, current_inventory }`
+- `etaRows`: array `{ stop_id, planned_h, eta_h, delta_min, violated }`
+- `alerts`: array, prepend per alert
+- `simTimeH`: current sim time, drives timeline bar
+
+---
+
+## Thứ tự implement
+
+### Phase 1 — Backend foundation
+
+- [x] Kafka local setup (KRaft) — verify Java version trước
+- [x] Tạo 3 topics, smoke test console producer/consumer
+- [x] `upload_loader.py`
+- [x] `run_single_from_instance()` trong `runner.py`
+- [x] FastAPI skeleton — `/instances`, `/run`, `/upload`
+- [x] `job_manager.py` — UUID tracking, job state, background thread
+
+### Phase 2 — Planning pipeline (first end-to-end)
+
+- [x] `kafka_bridge.py` — producer/consumer wrappers
+- [x] Kafka emit trong `hga.py` generation loop (non-fatal try/except)
+- [x] FastAPI WS consumer cho `convergence-log`
+- [x] React scaffold — Vite, folder structure, tab routing
+- [x] `useWebSocket` hook — `WebSocketBridge` tách Planning vs Monitoring
+- [x] `RunContext` — state shape
+- [x] Planning mode layout — sidebar + `RunControls`
+- [x] `ConvergenceChart` — Recharts, live append per `convergence` event
+- [x] `KpiCards` — render on `run_complete`
+- [x] Folium map HTML iframe embed
+- [x] "Go to Monitoring" button — enable on `run_complete`
+- [x] **Checkpoint: solver chạy → chart update live → KPIs hiện ✓**
+
+### Phase 3 — Monitoring pipeline
+
+- [x] `simulation/replay.py` — OSRM geometry, emit telemetry; replay theo `day`; `stop_event`
+- [x] Alert consumer — `telemetry_alert_worker.py` (TW) + replay emit `stockout` / `route_complete`
+- [x] `/monitor/start` và `/monitor/stop` endpoints
+- [x] FastAPI WS bridge cho `vehicle-telemetry` và `irp-alerts`
+- [x] `MonitoringContext` — state shape, reset on day change
+- [x] Monitoring mode layout — day selector, sim time, speed, Start/Stop
+- [x] `RouteMap` (Leaflet) — markers + highlight TW violation
+- [x] `VehiclePanel` — status list (trong `MonitoringView`)
+- [x] `ETATable` — planned vs ETA từ telemetry
+- [x] `CustomerPanel` — risk từ alerts stockout
+- [x] `AlertPanel` — `AlertFeed` trong monitoring
+- [x] Alert fan-out — một `alert` WS cập nhật map + bảng ETA + list xe + feed
+- [x] **Checkpoint: planning xong → monitoring → replay → alerts fan-out đồng thời ✓**
+
+### Phase 4 — Polish
+
+- [x] Upload flow — UploadForm, CSV depot fields, OSRM error handling
+- [x] Fast Demo preset — `pop=20, gen=40, time_limit=45`
+- [x] Ẩn GA params cho P/A, ẩn ConvergenceChart cho P/A
+- [x] Simulation speed selector (30x / 60x / 120x)
+- [x] Error states — `run_error` WS, HTTP 400 từ `/upload`
+- [x] Loading states — tối thiểu: Run disabled + status text (`RunControls`); spinner OSRM / progress solver tùy chọn
+- [x] Run directory cleanup — giữ 10 runs gần nhất
+- [x] **Checkpoint: full flow với upload, tất cả scenarios, error cases ✓**
+- [x] Product E2E (build + `vite preview` smoke + uvicorn thật + `scripts/e2e_product.py` HTTP/WS); `IRP_E2E_REPLAY_NO_OSRM=1` khi cần replay nhanh
 
 ---
 
 ## Notes
 
-- **Kafka failure is non-fatal.** Wrap all producer calls in try/except. Solver runs normally if Kafka is down.
-- **`KafkaProducer` is thread-safe** — HGA and replay run in FastAPI background threads, no lock needed.
-- **Simulation speed:** default 60x (1 hour = 1 second). Tune down to 30x if frontend can't keep up.
-- **Map HTML:** `visualize_solution()` writes `map.html` to disk. React embeds via iframe through `/result/{run_id}`. Do not re-generate in frontend.
-- **Run directory:** `/tmp/irp_runs/<run_id>/` using UUID. Keep last 10 runs, cleanup after each successful run.
-- **OSRM errors block the run.** Return HTTP 400 from `/upload`. Frontend must not allow `/run` if instance has no valid dist matrix.
-
----
-
-## Task Tracker
-
-### Phase 1 — Backend foundation
-
-- [x] Kafka local (KRaft, no Zookeeper) — môi trường dev: làm theo `docs/ft.md` §11 (binary Apache Kafka); topic có thể auto-create khi produce lần đầu
-- [x] Topics: `convergence-log`, `vehicle-telemetry`, `irp-alerts`
-- [x] Smoke / regression — **không script trong repo**; dùng UI hoặc `curl`/OpenAPI (xem `README.md`)
-- [x] `src/data/upload_loader.py` — `load_from_json`, `load_from_csv`
-- [x] Add `run_single_from_instance()` to `runner.py`
-- [x] FastAPI — `/instances`, `/run`, `/upload`, `/result`, `/ws`, `/health`
-- [x] `/upload` endpoint calling `upload_loader`
-- [x] `backend/job_manager.py` — UUID tracking, background thread, job state dict
-
-### Phase 2 — Convergence pipeline (first end-to-end)
-
-- [x] `kafka_bridge.py` — consumer → `outbound_queue` → WebSocket
-- [x] Add Kafka emit to `hga.py` generation loop (non-fatal try/except)
-- [x] FastAPI WebSocket broadcasts Kafka-backed events
-- [x] React app — Vite setup, folder structure
-- [x] `useWebSocket` hook — connect, parse, dispatch by `type`
-- [x] `RunContext` — state shape, reducer
-- [x] `ConvergenceChart` — Recharts LineChart, live append
-- [x] Run controls sidebar — built-in + upload
-- [x] **Checkpoint:** run solver, chart updates live per generation ✓
-
-### Phase 3 — Simulation pipeline
-
-- [x] `src/simulation/replay.py` — OSRM geometry (or straight line + warning), telemetry
-- [x] `kafka_bridge.py` — `vehicle-telemetry` and `irp-alerts` → WS
-- [x] `RouteMap` — React-Leaflet, telemetry updates
-- [x] Folium map HTML iframe embed after `run_complete`
-- [x] `AlertFeed` — alerts from WS
-- [x] **Checkpoint:** full flow — solve → animate → alerts ✓
-
-### Phase 4 — Polish
-
-- [x] `KpiCards` — render on `run_complete`
-- [x] Upload flow — CSV depot fields, OSRM error handling (HTTP 400)
-- [x] Fast Demo preset in UI
-- [x] Hide GA params section for scenario P/A
-- [x] Error states — `run_error` WS message, HTTP 400 from `/upload`
-- [x] Loading states — spinners / disabled run while busy
-- [x] Run directory cleanup — keep last 10
-- [x] **Checkpoint:** E2E thủ công — UI + API ✓
+- **Kafka failure là non-fatal.** Wrap tất cả producer calls trong try/except. Solver chạy bình thường nếu Kafka down.
+- **`KafkaProducer` thread-safe** — HGA và replay chạy trong FastAPI background threads, không cần lock.
+- **Simulation speed:** 60x default. Giảm xuống 30x nếu frontend không kịp render.
+- **Hai map khác nhau:** Folium HTML iframe trong Planning mode cho static result. Leaflet map trong Monitoring mode cho live animation. Không cố dùng một map cho cả hai.
+- **OSRM errors block run.** HTTP 400 từ `/upload`, frontend không cho phép `/run` nếu không có dist matrix hợp lệ.
+- **`MonitoringContext` reset khi đổi day** — tránh stale data từ ngày trước hiển thị trong panels.

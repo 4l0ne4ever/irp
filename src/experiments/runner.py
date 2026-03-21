@@ -13,6 +13,7 @@ import csv
 import json
 import logging
 import os
+import pickle
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -450,8 +451,23 @@ def _save_run_output(
             writer.writeheader()
             writer.writerows(convergence)
 
+    art_path = os.path.join(run_dir, "artifacts.pkl")
+    with open(art_path, "wb") as f:
+        pickle.dump({"instance": inst, "solution": sol}, f, protocol=pickle.HIGHEST_PROTOCOL)
+
     logger.info(f"  Run output saved to {run_dir}")
     return run_dir
+
+
+def load_planning_artifacts(run_dir: str) -> tuple:
+    """
+    Load Instance + Solution written by _save_run_output (artifacts.pkl).
+    Raises FileNotFoundError / pickle errors if missing or corrupt.
+    """
+    path = os.path.join(run_dir, "artifacts.pkl")
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+    return data["instance"], data["solution"]
 
 
 def _save_detailed_metrics(

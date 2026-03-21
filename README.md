@@ -36,7 +36,7 @@ Run artifacts: `/tmp/irp_runs/<run_id>/` (configurable via job manager).
 
 ## Key features
 
-- **Web UI:** Built-in instances, upload, run B/C with GA params, live WebSocket feed (Kafka-forwarded convergence, telemetry, alerts), charts and map.
+- **Web UI:** **Planning** tab (solver, convergence, Folium map) then **Monitoring** tab (replay per day via `POST /monitor/start`, live Leaflet, ETA table, alerts). WS: `run_complete` after solve; `telemetry` / `alert` / `sim_complete` during monitoring.
 - **Real routing:** OSRM road distances + IGP time-dependent travel times (5 time zones).
 - **Instance source:** Built-in `.npy` list, JSON upload, or CSV upload (**n** must equal data row count; **m** and depot from the form).
 - **Scenarios:** P, A, B, C with configurable GA (pop size, generations, time limit).

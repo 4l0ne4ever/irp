@@ -50,12 +50,11 @@ class HGA:
         seed: int = 42,
     ):
         self.inst = inst
-        # Adaptive scaling: larger instances need larger populations & more generations
-        # Ref: Vidal et al. (2012), pop ~ O(sqrt(n)), gen ~ O(n)
-        n = inst.n
-        self.pop_size = max(pop_size, min(n * 2, 300))
-        self.generations = max(generations, min(n * 5, 1000))
-        self.time_limit = time_limit
+        # Respect user/API caps: time_limit is a maximum wall-clock; loop may exit earlier
+        # on stagnation or when elapsed > time_limit. Pop/generations are not auto-inflated.
+        self.pop_size = max(2, int(pop_size))
+        self.generations = max(1, int(generations))
+        self.time_limit = float(time_limit)
         self.use_dynamic = use_dynamic
         self.rng = np.random.default_rng(seed)
 

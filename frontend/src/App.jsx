@@ -1,13 +1,16 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useRun } from "./context/RunContext.jsx";
+import { useMonitoring } from "./context/MonitoringContext.jsx";
 import { RunControls } from "./components/RunControls.jsx";
 import { KpiCards } from "./components/KpiCards.jsx";
+import { ResultDetailPanel } from "./components/ResultDetailPanel.jsx";
 import { ConvergenceChart } from "./components/ConvergenceChart.jsx";
-import { RouteMap } from "./components/RouteMap.jsx";
-import { AlertFeed } from "./components/AlertFeed.jsx";
+import { MonitoringView } from "./components/MonitoringView.jsx";
 
 export default function App() {
   const { state, dispatch, fetchInstances, startRun, pollResult, uploadCsv, uploadJson } = useRun();
+  const { dispatch: dispatchMon } = useMonitoring();
+  const [tab, setTab] = useState("planning");
   const [instances, setInstances] = useState([]);
   const [source, setSource] = useState("builtin");
   const [instanceKey, setInstanceKey] = useState("");
@@ -26,6 +29,7 @@ export default function App() {
   const [csvN, setCsvN] = useState(20);
   const [csvM, setCsvM] = useState(2);
   const [uploadFile, setUploadFile] = useState(null);
+  const [lastRunParams, setLastRunParams] = useState(null);
 
   useEffect(() => {
     fetchInstances()
@@ -118,6 +122,16 @@ export default function App() {
         upload_token: source === "upload" ? uploadToken : undefined,
       };
       const { run_id } = await startRun(body);
+      setLastRunParams({
+        scenario,
+        seed,
+        popSize,
+        generations,
+        timeLimit,
+        source,
+        instanceKey: source === "builtin" ? instanceKey : null,
+        showGa: scenario === "B" || scenario === "C",
+      });
       dispatch({ type: "RUN_STARTED", runId: run_id });
     } catch (e) {
       setErr(String(e.message || e));
@@ -127,85 +141,122 @@ export default function App() {
     }
   };
 
+  const goMonitoring = useCallback(() => {
+    if (!state.currentRunId) return;
+    dispatchMon({ type: "ARM_MONITOR", runId: state.currentRunId, selectedDay: 0 });
+    setTab("monitoring");
+  }, [state.currentRunId, dispatchMon]);
+
   const showGa = scenario === "B" || scenario === "C";
   const idle = state.runState === "idle" || state.runState === "complete" || state.runState === "error";
+  const canGoMonitoring = state.runState === "complete" && !!state.currentRunId && !!state.result;
 
   return (
     <div style={{ fontFamily: "system-ui,sans-serif", maxWidth: 1200, margin: "0 auto", padding: 16 }}>
-      <header style={{ marginBottom: 24 }}>
+      <header style={{ marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>IRP-TW-DT</h1>
-        <p style={{ color: "#666", marginTop: 4 }}>React + FastAPI + Kafka</p>
+        <p style={{ color: "#666", marginTop: 4 }}>Planning + Monitoring · FastAPI + Kafka</p>
+        <nav style={{ marginTop: 12, display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setTab("planning")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              background: tab === "planning" ? "#263238" : "#fff",
+              color: tab === "planning" ? "#fff" : "#333",
+              cursor: "pointer",
+            }}
+          >
+            Planning
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("monitoring")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid #ccc",
+              background: tab === "monitoring" ? "#263238" : "#fff",
+              color: tab === "monitoring" ? "#fff" : "#333",
+              cursor: "pointer",
+            }}
+          >
+            Monitoring
+          </button>
+        </nav>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 24 }}>
-        <RunControls
-          source={source}
-          onSourceBuiltin={() => setSource("builtin")}
-          onSourceUpload={() => setSource("upload")}
-          instances={instances}
-          instanceKey={instanceKey}
-          onInstanceKey={setInstanceKey}
-          uploadFile={uploadFile}
-          onFileChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-          csvDepotLon={csvDepotLon}
-          csvDepotLat={csvDepotLat}
-          csvN={csvN}
-          csvM={csvM}
-          onDepotLon={setCsvDepotLon}
-          onDepotLat={setCsvDepotLat}
-          onN={setCsvN}
-          onM={setCsvM}
-          onUpload={onUpload}
-          uploadToken={uploadToken}
-          scenario={scenario}
-          onScenario={setScenario}
-          showGa={showGa}
-          preset={preset}
-          onPreset={applyPreset}
-          popSize={popSize}
-          generations={generations}
-          timeLimit={timeLimit}
-          onPopSize={setPopSize}
-          onGenerations={setGenerations}
-          onTimeLimit={setTimeLimit}
-          seed={seed}
-          onSeed={setSeed}
-          onRun={onRun}
-          idle={idle}
-          busy={busy}
-          runState={state.runState}
-          err={err}
-          errorMessage={state.errorMessage}
-        />
+      {tab === "planning" && (
+        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 24 }}>
+          <RunControls
+            source={source}
+            onSourceBuiltin={() => setSource("builtin")}
+            onSourceUpload={() => setSource("upload")}
+            instances={instances}
+            instanceKey={instanceKey}
+            onInstanceKey={setInstanceKey}
+            uploadFile={uploadFile}
+            onFileChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+            csvDepotLon={csvDepotLon}
+            csvDepotLat={csvDepotLat}
+            csvN={csvN}
+            csvM={csvM}
+            onDepotLon={setCsvDepotLon}
+            onDepotLat={setCsvDepotLat}
+            onN={setCsvN}
+            onM={setCsvM}
+            onUpload={onUpload}
+            uploadToken={uploadToken}
+            scenario={scenario}
+            onScenario={setScenario}
+            showGa={showGa}
+            preset={preset}
+            onPreset={applyPreset}
+            popSize={popSize}
+            generations={generations}
+            timeLimit={timeLimit}
+            onPopSize={setPopSize}
+            onGenerations={setGenerations}
+            onTimeLimit={setTimeLimit}
+            seed={seed}
+            onSeed={setSeed}
+            onRun={onRun}
+            idle={idle}
+            busy={busy}
+            runState={state.runState}
+            err={err}
+            errorMessage={state.errorMessage}
+            onGoMonitoring={goMonitoring}
+            canGoMonitoring={canGoMonitoring}
+          />
 
-        <main>
-          {state.runState === "complete" && state.result && <KpiCards result={state.result} />}
+          <main>
+            {state.runState === "complete" && state.result && <KpiCards result={state.result} />}
 
-          {showGa && (
-            <section style={{ marginTop: 24 }}>
-              <h3>Convergence (live)</h3>
-              <ConvergenceChart data={state.convergence} />
-            </section>
-          )}
+            {state.runState === "complete" && state.result && (
+              <ResultDetailPanel result={state.result} runParams={lastRunParams} />
+            )}
 
-          <section style={{ marginTop: 24 }}>
-            <h3>Vehicle map (simulation)</h3>
-            <RouteMap telemetry={state.telemetry} />
-          </section>
+            {showGa && (
+              <section style={{ marginTop: 24 }}>
+                <h3>Convergence (live)</h3>
+                <ConvergenceChart data={state.convergence} />
+              </section>
+            )}
 
-          {state.mapHtml && (
-            <section style={{ marginTop: 24 }}>
-              <h3>Solution map (Folium)</h3>
-              <iframe title="map" srcDoc={state.mapHtml} style={{ width: "100%", height: 480, border: "1px solid #ccc" }} />
-            </section>
-          )}
+            {state.mapHtml && (
+              <section style={{ marginTop: 24 }}>
+                <h3>Solution map (Folium)</h3>
+                <iframe title="map" srcDoc={state.mapHtml} style={{ width: "100%", height: 480, border: "1px solid #ccc" }} />
+              </section>
+            )}
+          </main>
+        </div>
+      )}
 
-          <section style={{ marginTop: 24 }}>
-            <h3>Alerts</h3>
-            <AlertFeed alerts={state.alerts} />
-          </section>
-        </main>
-      </div>
+      {tab === "monitoring" && <MonitoringView />}
     </div>
   );
 }

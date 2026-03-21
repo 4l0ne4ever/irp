@@ -119,7 +119,7 @@ Wrap producer call trong try/except — emit failure là non-fatal, solver tiế
 
 ## 5. Thêm `run_single_from_instance()` vào `runner.py`
 
-Thêm một function sau `run_single`. Nhận `Instance` đã build sẵn (dist đã set từ constructor), chạy solver, trả về `(result_dict, run_dir_path)`.
+Thêm một function sau `run_single`. Nhận `Instance` đã build sẵn (dist đã set từ constructor), chạy solver, trả về `(result_dict, run_dir_path, solution)` và lưu `artifacts.pkl` (instance + solution) trong `run_dir` để Monitoring replay.
 
 Khác với `run_single`:
 
@@ -205,6 +205,8 @@ Alert types:
 | `/run`             | POST   | Chạy solver, bắt đầu emit Kafka, trả về `run_id`                       |
 | `/result/{run_id}` | GET    | Trả về result dict + map HTML sau khi run xong                         |
 | `/upload`          | POST   | Nhận file JSON hoặc CSV, gọi `upload_loader`, trả về instance metadata |
+| `/monitor/start`   | POST   | Body `{ run_id, day (0–6), speed_x }` — replay một ngày, emit telemetry |
+| `/monitor/stop`    | POST   | Body `{ run_id }` — hủy replay đang chạy                                  |
 
 ### WebSocket `/ws`
 
@@ -215,12 +217,14 @@ Một connection duy nhất per client. Tất cả Kafka events đi qua một ch
 | `convergence`  | Mỗi HGA generation                           |
 | `telemetry`    | Mỗi simulation time step                     |
 | `alert`        | Mỗi khi consumer phát hiện violation         |
-| `run_complete` | Solver + simulation đều xong                 |
-| `run_error`    | Bất kỳ exception nào trong background thread |
+| `run_complete` | Solver (Planning) xong — bản đồ Folium + `artifacts.pkl` |
+| `sim_complete` | Replay Monitoring cho một `day` xong (hoặc đã Stop)     |
+| `run_error`    | Exception trong thread Planning                          |
+| `monitor_error`| Exception khi load replay / `artifacts.pkl`             |
 
 ### Job lifecycle
 
-Mỗi `/run` call tạo một `run_id` (UUID). FastAPI track state của job trong memory dict. Background thread gồm 2 phases nối tiếp: (1) solver chạy, emit `convergence-log`; (2) simulation replay chạy, emit `vehicle-telemetry` và `irp-alerts`. `run_complete` emit sau khi cả 2 phases xong.
+Mỗi `/run` tạo `run_id` (UUID). Thread Planning chỉ chạy solver, emit `convergence-log`, lưu `artifacts.pkl`, rồi `run_complete`. Simulation theo ngày: `POST /monitor/start` với `{ run_id, day, speed_x }` — emit `vehicle-telemetry` / `irp-alerts`, kết thúc bằng `sim_complete` (hoặc `monitor_error`).
 
 ### OSRM error handling
 

@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useMemo, useReducer } from "react";
-import { useWebSocket } from "../hooks/useWebSocket.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -9,8 +8,6 @@ const initialState = {
   result: null,
   mapHtml: null,
   convergence: [],
-  telemetry: {},
-  alerts: [],
   errorMessage: null,
 };
 
@@ -29,27 +26,15 @@ function reducer(state, action) {
       return { ...initialState };
     case "RUN_STARTED":
       return {
-        ...state,
+        ...initialState,
         runState: "running",
         currentRunId: action.runId,
-        convergence: [],
-        telemetry: {},
-        alerts: [],
-        errorMessage: null,
-        result: null,
-        mapHtml: null,
       };
     case "WS_MESSAGE": {
       const m = action.payload;
       const rid = state.currentRunId;
-      const scopedTypes = new Set(["convergence", "telemetry", "alert", "phase"]);
-      if (rid && scopedTypes.has(m.type) && m.run_id != null && m.run_id !== rid) {
-        return state;
-      }
-      if (m.type === "phase" && m.phase === "simulating") {
-        return { ...state, runState: "simulating" };
-      }
       if (m.type === "convergence") {
+        if (rid && m.run_id != null && m.run_id !== rid) return state;
         return {
           ...state,
           convergence: [
@@ -60,19 +45,6 @@ function reducer(state, action) {
               avg_fitness: m.avg_fitness,
             },
           ],
-        };
-      }
-      if (m.type === "telemetry") {
-        const vid = m.vehicle_id;
-        return {
-          ...state,
-          telemetry: { ...state.telemetry, [vid]: { lat: m.lat, lon: m.lon, status: m.status, day: m.day } },
-        };
-      }
-      if (m.type === "alert" && m.data) {
-        return {
-          ...state,
-          alerts: [{ ...m.data, _ts: Date.now() }, ...state.alerts].slice(0, 200),
         };
       }
       if (m.type === "run_complete") {
@@ -104,10 +76,6 @@ const RunCtx = createContext(null);
 
 export function RunProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
-
-  const onWsMessage = useCallback((data) => {
-    dispatch({ type: "WS_MESSAGE", payload: data });
-  }, []);
 
   const fetchInstances = useCallback(async () => {
     const r = await fetch(`${API_BASE}/instances`);
@@ -182,9 +150,6 @@ export function RunProvider({ children }) {
     }),
     [state, fetchInstances, uploadCsv, uploadJson, startRun, pollResult]
   );
-
-  const wsBase = API_BASE.replace(/^http/, "ws");
-  useWebSocket(`${wsBase}/ws`, onWsMessage);
 
   return <RunCtx.Provider value={value}>{children}</RunCtx.Provider>;
 }

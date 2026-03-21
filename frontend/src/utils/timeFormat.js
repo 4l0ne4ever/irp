@@ -15,8 +15,7 @@ export function formatDayHour(h) {
  */
 export function formatSimClock24(h) {
   if (h == null || Number.isNaN(Number(h))) return "—";
-  let x = Number(h) % 24;
-  if (x < 0) x += 24;
+  const x = Math.max(0, Math.min(24 - 1e-9, Number(h)));
   const totalSec = Math.min(24 * 3600 - 1, Math.max(0, Math.round(x * 3600)));
   const hh = Math.floor(totalSec / 3600);
   const mm = Math.floor((totalSec % 3600) / 60);

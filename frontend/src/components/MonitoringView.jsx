@@ -14,9 +14,7 @@ export function MonitoringView() {
   const [ctxErr, setCtxErr] = useState(null);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [ctxRefresh, setCtxRefresh] = useState(0);
-  const [clockH, setClockH] = useState(0);
-  const anchorSimHRef = useRef(0);
-  const anchorWallRef = useRef(Date.now());
+  const ctxBoostedRef = useRef(false);
 
   const rid = state.monitorRunId;
   const atRisk = {};
@@ -65,33 +63,21 @@ export function MonitoringView() {
   }, [rid, state.selectedDay, API_BASE, dispatch, state.planRevision, ctxRefresh]);
 
   useEffect(() => {
+    ctxBoostedRef.current = false;
+  }, [rid, state.selectedDay]);
+
+  useEffect(() => {
+    if (!rid || mapCtx || ctxBoostedRef.current) return;
+    if (Object.keys(state.telemetry).length === 0) return;
+    ctxBoostedRef.current = true;
+    setCtxRefresh((n) => n + 1);
+  }, [rid, mapCtx, state.telemetry]);
+
+  useEffect(() => {
     if (state.monitoringState !== "simulating" || state.replayStartedAtMs == null) return undefined;
     const id = setInterval(() => setWallNow(Date.now()), 300);
     return () => clearInterval(id);
   }, [state.monitoringState, state.replayStartedAtMs]);
-
-  useEffect(() => {
-    const h = Number(state.simTimeH);
-    anchorSimHRef.current = Number.isFinite(h) ? h : 0;
-    anchorWallRef.current = Date.now();
-  }, [state.simTimeH]);
-
-  useEffect(() => {
-    if (state.monitoringState !== "simulating") {
-      const h = Number(state.simTimeH);
-      setClockH(Number.isFinite(h) ? h : 0);
-      return undefined;
-    }
-    let rafId = 0;
-    const tick = () => {
-      const dtSec = (Date.now() - anchorWallRef.current) / 1000;
-      const h = anchorSimHRef.current + dtSec * (speedX / 60);
-      setClockH(Math.min(23.9999, Math.max(0, h)));
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [state.monitoringState, speedX, state.simTimeH]);
 
   const wallElapsedSec = useMemo(() => {
     if (state.replayStartedAtMs == null) return 0;
@@ -120,8 +106,10 @@ export function MonitoringView() {
 
   const win = mapCtx?.day_window_h || { start: 6, end: 20 };
   const span = Math.max(0.25, Number(win.end) - Number(win.start));
-  const tickPct = clamp01((state.simTimeH - Number(win.start)) / span) * 100;
-  const dayPct = clamp01(clockH / 24) * 100;
+  const simH = Number(state.simTimeH);
+  const simHBar = Number.isFinite(simH) ? Math.min(24, Math.max(0, simH)) : 0;
+  const tickPct = clamp01((simHBar - Number(win.start)) / span) * 100;
+  const dayPct = clamp01(simHBar / 24) * 100;
 
   const onStart = async () => {
     if (!rid) return;
@@ -272,7 +260,7 @@ export function MonitoringView() {
           Trạng thái: <strong>{state.monitoringState}</strong>
           {state.monitoringState === "simulating" && (
             <span style={{ color: "#666", marginLeft: 8 }}>
-              (60× = 1 giờ mô phỏng / 1 giây thực; đồng hồ 24h nội suy giữa các bước telemetry theo tốc độ này)
+              (60× = 1 giờ mô phỏng / 1 giây thực; đồng hồ và thanh thời gian dùng cùng <code>sim_time_h</code> từ backend)
             </span>
           )}
         </span>
@@ -293,8 +281,10 @@ export function MonitoringView() {
             <span style={{ color: "#666" }}>Đang chờ bước đầu từ replay (đã bấm Start?)…</span>
           ) : (
             <>
-              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 18 }}>{formatDayHour(state.simTimeH)}</span>
-              <span style={{ color: "#666", marginLeft: 10, fontSize: 13 }}>({state.simTimeH.toFixed(2)} h — dạng số thập phân từ solver)</span>
+              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 18 }}>{formatDayHour(simHBar)}</span>
+              <span style={{ color: "#666", marginLeft: 10, fontSize: 13 }}>
+                ({Number.isFinite(simH) ? simH.toFixed(2) : "—"} h — raw từ replay; nhiều xe phát tuần tự thì mốc có thể &gt; 24)
+              </span>
             </>
           )}
         </div>
@@ -323,10 +313,10 @@ export function MonitoringView() {
           <div>
             <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>Đồng hồ ngày mô phỏng (00:00 – 23:59)</div>
             <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 28, fontWeight: 700, letterSpacing: 2, color: "#0d47a1" }}>
-              {formatSimClock24(clockH)}
+              {formatSimClock24(simHBar)}
             </div>
             <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-              Đồng bộ với <code>simTimeH</code> từ backend; chạy mượt giữa hai bước theo tốc độ × đã chọn.
+              Cùng nguồn với thanh “cửa sổ gợi ý” phía dưới (clamp 0–24h trên mặt đồng hồ).
             </div>
           </div>
           <div style={{ flex: "1 1 220px", minWidth: 200 }}>

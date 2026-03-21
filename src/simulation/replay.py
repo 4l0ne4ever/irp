@@ -53,8 +53,18 @@ def _emit_telemetry_step(
     sim_t: float,
     last_emit: List[Optional[float]],
     rest: Dict[str, object],
+    *,
+    sim_time_h_display: Optional[float] = None,
+    timeline_cap: Optional[List[float]] = None,
 ) -> None:
-    """Emit one telemetry row; speed_kmh_sim from sim-time delta vs. great-circle hop."""
+    """Emit one telemetry row; speed_kmh_sim from internal sim_t delta vs. great-circle hop.
+
+    sim_time_h_display (if set) is sent as sim_time_h for UI timeline; internal sim_t is still
+    used for speed between consecutive samples on the same leg.
+    """
+    emit_h = float(sim_time_h_display) if sim_time_h_display is not None else float(sim_t)
+    if timeline_cap is not None:
+        timeline_cap[0] = max(timeline_cap[0], emit_h)
     speed = None
     if last_emit[0] is not None and last_emit[2] is not None:
         dt_h = sim_t - float(last_emit[2])
@@ -67,7 +77,7 @@ def _emit_telemetry_step(
             "day": day,
             "lat": lat,
             "lon": lon,
-            "sim_time_h": sim_t,
+            "sim_time_h": emit_h,
             "speed_kmh_sim": speed,
             **rest,
         }
@@ -96,7 +106,7 @@ def _interpolate_latlon(path: List[Tuple[float, float]], frac: float) -> Tuple[f
     for i in range(len(path) - 1):
         lat1, lon1 = path[i]
         lat2, lon2 = path[i + 1]
-        d = abs(lat2 - lat1) + abs(lon2 - lon1)
+        d = haversine_km(lat1, lon1, lat2, lon2)
         segs.append(d)
         total += d
     if total < 1e-12:
@@ -185,9 +195,15 @@ def run_simulation_replay(
     src_fn = traffic_source_fn or (lambda: "unknown")
 
     for d in days:
+        timeline_end = 0.0
+        first_route = True
         for route in sol.schedule[d]:
             if not route.stops:
                 continue
+            depart = float(route.depart_h)
+            offset = 0.0 if first_route else (timeline_end - depart)
+            timeline_cap: List[float] = [0.0]
+            first_route = False
             if adaptive_traffic and get_factor is not None:
                 gb = get_baseline_factor or get_factor
                 if _replay_route_adaptive(
@@ -205,6 +221,8 @@ def run_simulation_replay(
                     gb,
                     auto_replan_callback,
                     src_fn,
+                    sim_time_offset=offset,
+                    timeline_cap=timeline_cap,
                 ):
                     return True
             elif _replay_route(
@@ -218,8 +236,11 @@ def run_simulation_replay(
                 stop_event,
                 telemetry_extra,
                 telemetry_extra_fn,
+                sim_time_offset=offset,
+                timeline_cap=timeline_cap,
             ):
                 return True
+            timeline_end = max(timeline_end, timeline_cap[0])
     return False
 
 
@@ -234,6 +255,9 @@ def _replay_route(
     stop_event: Optional[threading.Event],
     telemetry_extra: Optional[Dict[str, object]] = None,
     telemetry_extra_fn: TelemetryExtraFn = None,
+    *,
+    sim_time_offset: float = 0.0,
+    timeline_cap: Optional[List[float]] = None,
 ) -> bool:
     """Return True if stopped early. Timeline follows planned arrivals from the solution."""
     vid = route.vehicle_id
@@ -275,6 +299,8 @@ def _replay_route(
                 sim_t,
                 last_emit,
                 rest,
+                sim_time_h_display=sim_t + sim_time_offset,
+                timeline_cap=timeline_cap,
             )
             if s < n_steps and _sleep_cancellable(step_sleep, stop_event):
                 return True
@@ -311,6 +337,8 @@ def _replay_route(
             st,
             last_emit,
             rest_d,
+            sim_time_h_display=st + sim_time_offset,
+            timeline_cap=timeline_cap,
         )
         if s < steps_per_leg and _sleep_cancellable(step_sleep, stop_event):
             return True
@@ -334,6 +362,8 @@ def _replay_route(
         prev_time,
         last_emit,
         rest_done,
+        sim_time_h_display=prev_time + sim_time_offset,
+        timeline_cap=timeline_cap,
     )
     emit_irp_alert(
         {
@@ -381,6 +411,9 @@ def _replay_route_adaptive(
     get_baseline_factor: Callable[[float], float],
     auto_replan_callback: Optional[Callable[[float], None]],
     traffic_source_fn: Callable[[], str],
+    *,
+    sim_time_offset: float = 0.0,
+    timeline_cap: Optional[List[float]] = None,
 ) -> bool:
     """Return True if stopped early. Leg durations use igp_travel_time × factor (matches TomTomModel)."""
     vid = route.vehicle_id
@@ -438,6 +471,8 @@ def _replay_route_adaptive(
                 sim_t,
                 last_emit,
                 rest,
+                sim_time_h_display=sim_t + sim_time_offset,
+                timeline_cap=timeline_cap,
             )
             _maybe_auto_replan(
                 sim_t,
@@ -489,6 +524,8 @@ def _replay_route_adaptive(
             sim_t,
             last_emit,
             rest_d,
+            sim_time_h_display=sim_t + sim_time_offset,
+            timeline_cap=timeline_cap,
         )
         if s < n_steps and _sleep_cancellable(step_sleep, stop_event):
             return True
@@ -512,6 +549,8 @@ def _replay_route_adaptive(
         prev_time,
         last_emit,
         rest_done,
+        sim_time_h_display=prev_time + sim_time_offset,
+        timeline_cap=timeline_cap,
     )
     emit_irp_alert(
         {

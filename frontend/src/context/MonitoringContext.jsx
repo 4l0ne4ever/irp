@@ -90,7 +90,8 @@ function reducer(state, action) {
         const trails = { ...state.trails, [vid]: [...prevTrail, [m.lat, m.lon]].slice(-150) };
         return {
           ...state,
-          simTimeH: typeof st === "number" ? Math.max(state.simTimeH, st) : state.simTimeH,
+          simTimeH:
+            typeof st === "number" ? Math.max(state.simTimeH, st) : state.simTimeH,
           telemetry: {
             ...state.telemetry,
             [vid]: {

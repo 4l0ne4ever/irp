@@ -165,6 +165,7 @@ def start_monitor_replay_thread(
                 "run_id": run_id,
                 "day": day,
                 "hours_per_real_second": hours_per_real_second,
+                "steps_per_leg": 20,
                 "stop_event": stop_ev,
                 "telemetry_extra_fn": _traffic_meta,
             }

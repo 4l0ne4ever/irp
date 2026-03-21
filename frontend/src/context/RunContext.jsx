@@ -9,6 +9,8 @@ const initialState = {
   mapHtml: null,
   convergence: [],
   errorMessage: null,
+  trafficModel: "igp",
+  solverProgressMessage: null,
 };
 
 function _detailToString(detail) {
@@ -23,16 +25,24 @@ function _detailToString(detail) {
 function reducer(state, action) {
   switch (action.type) {
     case "RESET":
-      return { ...initialState };
+      return { ...initialState, trafficModel: state.trafficModel };
+    case "SET_TRAFFIC_MODEL":
+      return { ...state, trafficModel: action.value };
     case "RUN_STARTED":
       return {
         ...initialState,
+        trafficModel: action.trafficModel ?? state.trafficModel ?? "igp",
         runState: "running",
         currentRunId: action.runId,
+        solverProgressMessage: null,
       };
     case "WS_MESSAGE": {
       const m = action.payload;
       const rid = state.currentRunId;
+      if (m.type === "solver_progress") {
+        if (rid && m.run_id != null && m.run_id !== rid) return state;
+        return { ...state, solverProgressMessage: m.message || null };
+      }
       if (m.type === "convergence") {
         if (rid && m.run_id != null && m.run_id !== rid) return state;
         return {
@@ -49,7 +59,7 @@ function reducer(state, action) {
       }
       if (m.type === "run_complete") {
         if (rid && m.run_id && m.run_id !== rid) return state;
-        return { ...state, runState: "complete" };
+        return { ...state, runState: "complete", solverProgressMessage: null };
       }
       if (m.type === "run_error") {
         if (rid && m.run_id && m.run_id !== rid) return state;
@@ -57,6 +67,7 @@ function reducer(state, action) {
           ...state,
           runState: "error",
           errorMessage: m.message || "Run failed",
+          solverProgressMessage: null,
         };
       }
       return state;
@@ -66,6 +77,7 @@ function reducer(state, action) {
         ...state,
         result: action.result,
         mapHtml: action.mapHtml,
+        solverProgressMessage: null,
       };
     default:
       return state;

@@ -21,6 +21,10 @@ OSRM_MAX_COORDS_PER_REQUEST = 100  # Safe limit for public server
 OSRM_REQUEST_TIMEOUT = 60  # seconds
 OSRM_RETRY_DELAY = 2.0     # seconds between retries
 OSRM_MAX_RETRIES = 3
+OSRM_HTTP_HEADERS = {
+    "User-Agent": "IRP-TW-DT/1.0 (+https://github.com; routing research)",
+    "Accept": "application/json",
+}
 
 
 def _coords_to_osrm_string(coords_gps: np.ndarray) -> str:
@@ -84,7 +88,7 @@ def _osrm_table_request(
     for attempt in range(OSRM_MAX_RETRIES):
         try:
             logger.info(f"OSRM table request ({coords_gps.shape[0]} points), attempt {attempt + 1}...")
-            resp = requests.get(url, timeout=timeout)
+            resp = requests.get(url, timeout=timeout, headers=OSRM_HTTP_HEADERS)
             resp.raise_for_status()
             data = resp.json()
 
@@ -166,7 +170,7 @@ def _osrm_sub_table(
 
     for attempt in range(OSRM_MAX_RETRIES):
         try:
-            resp = requests.get(url, timeout=timeout)
+            resp = requests.get(url, timeout=timeout, headers=OSRM_HTTP_HEADERS)
             resp.raise_for_status()
             data = resp.json()
             if data.get("code") != "Ok":
@@ -306,11 +310,12 @@ def get_osrm_route_geometry(
 
     for attempt in range(OSRM_MAX_RETRIES):
         try:
-            resp = requests.get(url, timeout=timeout)
+            resp = requests.get(url, timeout=timeout, headers=OSRM_HTTP_HEADERS)
             resp.raise_for_status()
             data = resp.json()
 
             if data.get("code") != "Ok":
+                logger.warning("OSRM route geometry non-Ok: %s", data.get("message", data.get("code")))
                 if attempt < OSRM_MAX_RETRIES - 1:
                     _time.sleep(OSRM_RETRY_DELAY)
                     continue
@@ -320,7 +325,8 @@ def get_osrm_route_geometry(
             geojson_coords = data["routes"][0]["geometry"]["coordinates"]
             return [[c[1], c[0]] for c in geojson_coords]
 
-        except Exception:
+        except Exception as e:
+            logger.warning("OSRM route geometry request failed: %s", e)
             if attempt < OSRM_MAX_RETRIES - 1:
                 _time.sleep(OSRM_RETRY_DELAY)
 

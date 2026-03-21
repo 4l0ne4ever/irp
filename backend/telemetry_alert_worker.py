@@ -29,7 +29,7 @@ def _maybe_emit_tw_violation(payload: Dict[str, Any]) -> None:
     nid = payload.get("next_customer_id")
     if eta is None or plan is None or run_id is None or vid is None or day is None or nid is None:
         return
-    if float(eta) <= float(plan) + 0.25:
+    if float(eta) <= float(plan) + (20.0 / 60.0):
         return
     key = (str(run_id), int(vid), int(day), int(nid))
     with _lock:
@@ -50,7 +50,7 @@ def _maybe_emit_tw_violation(payload: Dict[str, Any]) -> None:
                 "customer_id": int(nid),
                 "eta_h": float(eta),
                 "planned_arrival_h": float(plan),
-                "message": f"ETA {eta:.2f}h > planned {plan:.2f}h + 0.25h",
+                "message": f"ETA {eta:.2f}h > planned {plan:.2f}h + 20min",
                 "ts": datetime.now(timezone.utc).isoformat(),
             }
         )

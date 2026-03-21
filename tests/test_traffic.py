@@ -5,9 +5,13 @@ Verifies FIFO property, boundary conditions, and overnight travel.
 
 import pytest
 import numpy as np
+from src.core.constants import TRAFFIC_ZONES
 from src.core.traffic import (
-    igp_travel_time, igp_arrival_time, static_travel_time,
-    precompute_travel_time_matrix, _find_zone,
+    igp_travel_time,
+    igp_arrival_time,
+    static_travel_time,
+    precompute_travel_time_matrix,
+    _find_zone,
 )
 
 
@@ -96,16 +100,17 @@ class TestZoneFinding:
     """Test zone identification."""
 
     def test_boundaries(self):
-        assert _find_zone(0.0) == 0
-        assert _find_zone(5.99) == 0
-        assert _find_zone(6.0) == 1
-        assert _find_zone(8.99) == 1
-        assert _find_zone(9.0) == 2
-        assert _find_zone(16.99) == 2
-        assert _find_zone(17.0) == 3
-        assert _find_zone(18.99) == 3
-        assert _find_zone(19.0) == 4
-        assert _find_zone(23.99) == 4
+        z = TRAFFIC_ZONES
+        assert _find_zone(0.0, z) == 0
+        assert _find_zone(5.99, z) == 0
+        assert _find_zone(6.0, z) == 1
+        assert _find_zone(8.99, z) == 1
+        assert _find_zone(9.0, z) == 2
+        assert _find_zone(16.99, z) == 2
+        assert _find_zone(17.0, z) == 3
+        assert _find_zone(18.99, z) == 3
+        assert _find_zone(19.0, z) == 4
+        assert _find_zone(23.99, z) == 4
 
 
 class TestPrecompute:

@@ -16,7 +16,10 @@ import os
 import pickle
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from src.solver.chromosome import Chromosome
 
 import numpy as np
 
@@ -231,6 +234,8 @@ def run_single_from_instance(
     output_dir: str = "results",
     seed: int = 42,
     run_id: Optional[str] = None,
+    traffic_model: str = "igp",
+    seed_chromosome: Optional["Chromosome"] = None,
 ) -> tuple:
     """
     Run a single experiment from a pre-built, validated Instance (e.g. from upload).
@@ -258,12 +263,20 @@ def run_single_from_instance(
     (Dict, str, Solution)
         result_dict, run_directory path, best solution (for simulation replay).
     """
+    from src.core.traffic import TomTomModel, build_travel_model
     from src.messaging.kafka_convergence import (
         clear_convergence_run_id,
         set_convergence_run_id,
     )
 
     n, m = instance.n, instance.m
+    tm_key = (traffic_model or "igp").strip().lower()
+    if tm_key == "tomtom":
+        from backend.traffic_state import traffic_store
+
+        tm = TomTomModel(lambda h: float(traffic_store.get_factor(h)))
+    else:
+        tm = build_travel_model(traffic_model)
     os.makedirs(output_dir, exist_ok=True)
     set_convergence_run_id(run_id)
     log_path = os.path.join(output_dir, "run_log.txt")
@@ -273,6 +286,8 @@ def run_single_from_instance(
     root_logger = logging.getLogger()
     root_logger.addHandler(file_handler)
     convergence = None
+    best_chrom = None
+    hga_for_meta = None
     t0 = time.time()
     try:
         logger.info("Run started: scenario=%s scale=%s n=%d m=%d", scenario, scale, n, m)
@@ -284,26 +299,73 @@ def run_single_from_instance(
             sol = solve_rmi(instance)
         elif scenario == "B":
             logger.info("Running Scenario B (IRP-TW-Static, HGA)...")
-            hga = HGA(instance, pop_size=pop_size, generations=generations,
-                      time_limit=time_limit, use_dynamic=False, seed=seed)
+            hga = HGA(
+                instance,
+                pop_size=pop_size,
+                generations=generations,
+                time_limit=time_limit,
+                use_dynamic=False,
+                seed=seed,
+                travel_model=tm,
+                seed_chromosome=seed_chromosome,
+            )
             sol = hga.run()
             convergence = hga.convergence_log
+            best_chrom = hga.best_chrom
+            hga_for_meta = hga
         elif scenario == "C":
             logger.info("Running Scenario C (IRP-TW-DT, HGA)...")
-            hga = HGA(instance, pop_size=pop_size, generations=generations,
-                      time_limit=time_limit, use_dynamic=True, seed=seed)
+            hga = HGA(
+                instance,
+                pop_size=pop_size,
+                generations=generations,
+                time_limit=time_limit,
+                use_dynamic=True,
+                seed=seed,
+                travel_model=tm,
+                seed_chromosome=seed_chromosome,
+            )
             sol = hga.run()
             convergence = hga.convergence_log
+            best_chrom = hga.best_chrom
+            hga_for_meta = hga
         else:
             raise ValueError(f"Unknown scenario: {scenario}")
 
         elapsed = time.time() - t0
         logger.info("Solver finished in %.2f s; building result...", elapsed)
-        result = _make_result(scenario, scale, n, m, seed, sol, elapsed,
-                              inst=instance, convergence=convergence)
+        result = _make_result(
+            scenario,
+            scale,
+            n,
+            m,
+            seed,
+            sol,
+            elapsed,
+            inst=instance,
+            convergence=convergence,
+            hga=hga_for_meta,
+        )
 
-        run_dir = _save_run_output(output_dir, scenario, scale, n, seed, instance, sol, result,
-                                   convergence=convergence)
+        from src.messaging.kafka_convergence import emit_solver_progress
+
+        emit_solver_progress(
+            "Đang ghi file kết quả (JSON, CSV) và tạo bản đồ Folium — có thể mất thêm vài giây…"
+        )
+
+        run_dir = _save_run_output(
+            output_dir,
+            scenario,
+            scale,
+            n,
+            seed,
+            instance,
+            sol,
+            result,
+            convergence=convergence,
+            best_chromosome=best_chrom,
+            traffic_model=traffic_model,
+        )
         logger.info("Run complete. Output in %s", run_dir)
         return result, run_dir, sol
     finally:
@@ -317,6 +379,7 @@ def _make_result(
     sol: Solution, elapsed: float,
     inst: Instance = None,
     convergence: list = None,
+    hga=None,
 ) -> Dict:
     """Create a result dictionary from a solution with all DevGuide §6.2 KPIs."""
     n_deliveries = 0
@@ -368,7 +431,7 @@ def _make_result(
             "distance_km": round(day_km, 2),
         })
 
-    return {
+    out = {
         "scenario": scenario,
         "scale": scale,
         "n": n,
@@ -401,6 +464,12 @@ def _make_result(
         # Per-day breakdown
         "per_day": per_day,
     }
+    if hga is not None and convergence:
+        out["ga_generations_limit"] = int(hga.generations)
+        out["ga_generations_run"] = len(convergence)
+        out["ga_stop_reason"] = getattr(hga, "ga_stop_reason", None)
+        out["ga_stagnation_window"] = max(30, int(hga.generations) // 5)
+    return out
 
 
 def _save_run_output(
@@ -408,6 +477,8 @@ def _save_run_output(
     scenario: str, scale: str, n: int, seed: int,
     inst: Instance, sol: Solution, result: Dict,
     convergence: list = None,
+    best_chromosome=None,
+    traffic_model: str = "igp",
 ) -> str:
     """
     Save a single run's outputs to a subfolder.
@@ -452,8 +523,14 @@ def _save_run_output(
             writer.writerows(convergence)
 
     art_path = os.path.join(run_dir, "artifacts.pkl")
+    bundle = {
+        "instance": inst,
+        "solution": sol,
+        "traffic_model": traffic_model,
+        "best_chromosome": best_chromosome,
+    }
     with open(art_path, "wb") as f:
-        pickle.dump({"instance": inst, "solution": sol}, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(bundle, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     logger.info(f"  Run output saved to {run_dir}")
     return run_dir
@@ -468,6 +545,13 @@ def load_planning_artifacts(run_dir: str) -> tuple:
     with open(path, "rb") as f:
         data = pickle.load(f)
     return data["instance"], data["solution"]
+
+
+def load_planning_artifact_bundle(run_dir: str) -> Dict:
+    """Full artifacts dict: instance, solution, traffic_model, best_chromosome (may be None)."""
+    path = os.path.join(run_dir, "artifacts.pkl")
+    with open(path, "rb") as f:
+        return pickle.load(f)
 
 
 def _save_detailed_metrics(

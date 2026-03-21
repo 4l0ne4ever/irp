@@ -114,8 +114,32 @@ def emit_convergence_step(
         logger.warning("Kafka convergence emit failed (non-fatal): %s", e)
 
 
+def emit_solver_progress(message: str) -> None:
+    """
+    Notify Planning UI that the solver is still working after the GA loop
+    (feasibility repair, saving artifacts, map build). Uses the FastAPI outbound
+    queue so the message reaches WebSocket even when Kafka is down.
+    """
+    run_id = _get_run_id()
+    if not run_id:
+        return
+    payload = {
+        "type": "solver_progress",
+        "run_id": run_id,
+        "message": str(message),
+    }
+    try:
+        from backend.realtime import outbound_queue
+
+        outbound_queue.put(payload)
+    except Exception as e:
+        logger.warning("solver_progress queue emit failed (non-fatal): %s", e)
+
+
 TOPIC_TELEMETRY = "vehicle-telemetry"
 TOPIC_ALERT = "irp-alerts"
+TOPIC_REPLAN = "replan-events"
+TOPIC_TRAFFIC_UPDATES = "traffic-updates"
 
 
 def emit_vehicle_telemetry(payload: Dict[str, Any]) -> None:
@@ -134,3 +158,21 @@ def emit_irp_alert(payload: Dict[str, Any]) -> None:
             prod.send(TOPIC_ALERT, value=_json_safe(payload))
     except Exception as e:
         logger.warning("Kafka alert emit failed (non-fatal): %s", e)
+
+
+def emit_replan_event(payload: Dict[str, Any]) -> None:
+    try:
+        prod = _get_producer()
+        if prod:
+            prod.send(TOPIC_REPLAN, value=_json_safe(payload))
+    except Exception as e:
+        logger.warning("Kafka replan emit failed (non-fatal): %s", e)
+
+
+def emit_traffic_update(payload: Dict[str, Any]) -> None:
+    try:
+        prod = _get_producer()
+        if prod:
+            prod.send(TOPIC_TRAFFIC_UPDATES, value=_json_safe(payload))
+    except Exception as e:
+        logger.warning("Kafka traffic_update emit failed (non-fatal): %s", e)

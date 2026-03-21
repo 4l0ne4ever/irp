@@ -23,6 +23,8 @@ export function RunControls({
   scenario,
   onScenario,
   showGa,
+  trafficModel,
+  onTrafficModel,
   preset,
   onPreset,
   popSize,
@@ -98,6 +100,16 @@ export function RunControls({
 
       {showGa && (
         <>
+          <h3 style={{ marginTop: 12 }}>Traffic model</h3>
+          <select
+            value={trafficModel}
+            onChange={(e) => onTrafficModel(e.target.value)}
+            style={{ width: "100%", marginBottom: 8 }}
+          >
+            <option value="igp">IGP (default zones)</option>
+            <option value="mock_api">Mock API (JSON)</option>
+            <option value="tomtom">TomTom (ingest before run)</option>
+          </select>
           <h3 style={{ marginTop: 16 }}>GA (HGA — scenario B/C)</h3>
           <p style={{ fontSize: 11, color: "#555", margin: "4px 0 8px" }}>
             Pop size, generations, time limit gửi thẳng tới API <code>/run</code> và dùng trong <code>HGA.run()</code> — có

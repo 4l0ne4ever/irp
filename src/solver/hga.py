@@ -5,12 +5,13 @@ Main evolutionary loop with elitism, tournament selection, and local search.
 
 import time
 import logging
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
 from src.core.instance import Instance
 from src.core.solution import Solution
+from src.core.traffic import IGPModel, TravelTimeModel
 from src.core.constants import (
     GA_POP_SIZE, GA_GENERATIONS, GA_ELITISM_RATE,
     GA_TOURNAMENT_K, GA_CROSSOVER_PROB, GA_MUTATION_RATE_Y,
@@ -20,7 +21,7 @@ from .chromosome import Chromosome, random_chromosome, savings_chromosome, copy_
 from .fitness import evaluate, compare_fitness
 from .operators import crossover, mutate, repair
 from .local_search import apply_local_search
-from src.messaging.kafka_convergence import emit_convergence_step
+from src.messaging.kafka_convergence import emit_convergence_step, emit_solver_progress
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class HGA:
         time_limit: float = GA_TIME_LIMIT,
         use_dynamic: bool = True,
         seed: int = 42,
+        travel_model: Optional[TravelTimeModel] = None,
+        seed_chromosome: Optional[Chromosome] = None,
     ):
         self.inst = inst
         # Respect user/API caps: time_limit is a maximum wall-clock; loop may exit earlier
@@ -57,6 +60,8 @@ class HGA:
         self.time_limit = float(time_limit)
         self.use_dynamic = use_dynamic
         self.rng = np.random.default_rng(seed)
+        self.travel_model = travel_model if travel_model is not None else IGPModel()
+        self._seed_chromosome = seed_chromosome
 
         # Population
         self.population: List[Tuple[Chromosome, float, Solution]] = []
@@ -66,6 +71,7 @@ class HGA:
 
         # Convergence log
         self.convergence_log: List[dict] = []
+        self.ga_stop_reason: Optional[str] = None
 
     def run(self) -> Solution:
         """
@@ -93,43 +99,16 @@ class HGA:
         stagnation_limit = max(30, self.generations // 5)
         restart_count = 0
         max_restarts = 2  # Allow up to 2 diversification restarts
-
         for gen in range(self.generations):
             elapsed = time.time() - start_time
             if elapsed > self.time_limit:
                 logger.info(f"Time limit reached at generation {gen}")
+                self.ga_stop_reason = "time_limit"
                 break
 
             self._evolve_generation(gen)
 
-            # Early termination: stop if no improvement for many generations
-            if self.best_fitness < prev_best - 1e-2:
-                prev_best = self.best_fitness
-                stagnation_count = 0
-            else:
-                stagnation_count += 1
-            if stagnation_count >= stagnation_limit:
-                if restart_count < max_restarts and self.best_solution.feasible:
-                    # Diversification restart: keep top 25%, regenerate rest
-                    restart_count += 1
-                    logger.info(f"Diversification restart {restart_count} at gen {gen}")
-                    n_keep = max(2, self.pop_size // 4)
-                    survivors = self.population[:n_keep]
-                    for _ in range(self.pop_size - n_keep):
-                        chrom = random_chromosome(self.inst, self.rng)
-                        repair(chrom, self.inst)
-                        f, s = evaluate(chrom, self.inst, use_dynamic=self.use_dynamic)
-                        survivors.append((chrom, f, s))
-                    self.population = survivors
-                    self.population.sort(key=lambda x: (not x[2].feasible, x[1]))
-                    stagnation_count = 0
-                elif self.best_solution.feasible:
-                    logger.info(f"Converged at generation {gen} "
-                                f"(no improvement for {stagnation_limit} gens, "
-                                f"{restart_count} restarts used)")
-                    break
-
-            # Log convergence
+            # Log this generation before stagnation exit so the chart / Kafka get the final point
             fitnesses = [f for _, f, _ in self.population]
             log_entry = {
                 "generation": gen,
@@ -160,12 +139,53 @@ class HGA:
                     f"Time: {elapsed:.1f}s"
                 )
 
+            # Early termination: stop if no improvement for many generations
+            if self.best_fitness < prev_best - 1e-2:
+                prev_best = self.best_fitness
+                stagnation_count = 0
+            else:
+                stagnation_count += 1
+            if stagnation_count >= stagnation_limit:
+                if restart_count < max_restarts and self.best_solution.feasible:
+                    # Diversification restart: keep top 25%, regenerate rest
+                    restart_count += 1
+                    logger.info(f"Diversification restart {restart_count} at gen {gen}")
+                    n_keep = max(2, self.pop_size // 4)
+                    survivors = self.population[:n_keep]
+                    for _ in range(self.pop_size - n_keep):
+                        chrom = random_chromosome(self.inst, self.rng)
+                        repair(chrom, self.inst)
+                        f, s = evaluate(
+                            chrom, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model
+                        )
+                        survivors.append((chrom, f, s))
+                    self.population = survivors
+                    self.population.sort(key=lambda x: (not x[2].feasible, x[1]))
+                    stagnation_count = 0
+                elif self.best_solution.feasible:
+                    logger.info(f"Converged at generation {gen} "
+                                f"(no improvement for {stagnation_limit} gens, "
+                                f"{restart_count} restarts used)")
+                    self.ga_stop_reason = "stagnation"
+                    break
+
+        if self.ga_stop_reason is None and len(self.convergence_log) >= self.generations:
+            self.ga_stop_reason = "max_generations"
+        elif self.ga_stop_reason is None:
+            self.ga_stop_reason = "time_limit"
+
         # --- Final feasibility guarantee ---
+        emit_solver_progress(
+            "Vòng GA đã kết thúc — đang hậu xử lý (kiểm tra / sửa tính khả thi…). "
+            "Bước này có thể mất thêm vài giây đến vài phút, đồ thị convergence sẽ không đổi trong lúc đó."
+        )
         if self.best_solution and not self.best_solution.feasible:
             logger.warning("Best solution infeasible — running feasibility repair...")
             for _ in range(5):
                 repair(self.best_chrom, self.inst)
-                f, sol = evaluate(self.best_chrom, self.inst, self.use_dynamic)
+                f, sol = evaluate(
+                    self.best_chrom, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model
+                )
                 if sol.feasible or f < self.best_fitness:
                     self.best_fitness = f
                     self.best_solution = sol
@@ -175,10 +195,15 @@ class HGA:
             # Last resort: generate fresh feasible chromosomes
             if not self.best_solution.feasible:
                 logger.warning("Repair failed — generating fresh feasible solutions...")
+                emit_solver_progress(
+                    "Repair nhanh chưa đủ — đang thử thêm nhiều cá thể ngẫu nhiên (có thể lâu hơn)…"
+                )
                 for _ in range(self.pop_size):
                     chrom = random_chromosome(self.inst, self.rng)
                     repair(chrom, self.inst)
-                    f, sol = evaluate(chrom, self.inst, self.use_dynamic)
+                    f, sol = evaluate(
+                        chrom, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model
+                    )
                     if sol.feasible and (not self.best_solution.feasible
                                          or f < self.best_fitness):
                         self.best_fitness = f
@@ -202,18 +227,32 @@ class HGA:
         return self.best_solution
 
     def _initialize_population(self):
-        """Create initial population: 25% savings-based, 75% random."""
+        """Create initial population: optional warm-start chromosome, then 25% / 75% savings/random."""
         self.population = []
 
-        n_savings = max(1, self.pop_size // 4)
+        if self._seed_chromosome is not None:
+            sc = copy_chromosome(self._seed_chromosome)
+            repair(sc, self.inst)
+            fitness, sol = evaluate(
+                sc, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model
+            )
+            self.population.append((sc, fitness, sol))
+            if fitness < self.best_fitness:
+                self.best_fitness = fitness
+                self.best_chrom = copy_chromosome(sc)
+                self.best_solution = sol
 
-        for i in range(self.pop_size):
-            if i < n_savings:
+        n_savings = max(1, self.pop_size // 4)
+        start = len(self.population)
+        for i in range(start, self.pop_size):
+            if (i - start) < n_savings:
                 chrom = savings_chromosome(self.inst, self.rng)
             else:
                 chrom = random_chromosome(self.inst, self.rng)
             repair(chrom, self.inst)
-            fitness, sol = evaluate(chrom, self.inst, use_dynamic=self.use_dynamic)
+            fitness, sol = evaluate(
+                chrom, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model
+            )
             self.population.append((chrom, fitness, sol))
 
             if fitness < self.best_fitness:
@@ -255,8 +294,8 @@ class HGA:
             repair(c2, self.inst)
 
             # Evaluate
-            f1, s1 = evaluate(c1, self.inst, use_dynamic=self.use_dynamic)
-            f2, s2 = evaluate(c2, self.inst, use_dynamic=self.use_dynamic)
+            f1, s1 = evaluate(c1, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model)
+            f2, s2 = evaluate(c2, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model)
 
             new_pop.append((c1, f1, s1))
             if len(new_pop) < self.pop_size:
@@ -277,9 +316,10 @@ class HGA:
                 use_dynamic=self.use_dynamic,
                 use_time_shift=self.use_dynamic,
                 rng=self.rng,
+                travel_model=self.travel_model,
             )
             new_fitness, new_sol = evaluate(
-                improved, self.inst, use_dynamic=self.use_dynamic
+                improved, self.inst, use_dynamic=self.use_dynamic, travel_model=self.travel_model
             )
             if new_fitness < fitness:
                 self.population[i] = (improved, new_fitness, new_sol)

@@ -16,16 +16,26 @@ from backend.realtime import outbound_queue
 logger = logging.getLogger(__name__)
 
 DEFAULT_BOOTSTRAP = "localhost:9092"
-TOPICS = ("convergence-log", "vehicle-telemetry", "irp-alerts")
+TOPICS = ("convergence-log", "vehicle-telemetry", "irp-alerts", "replan-events", "traffic-updates")
 
 
 def _normalize_message(topic: str, value: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if topic == "convergence-log":
+        if value.get("kind") == "solver_progress":
+            return {
+                "type": "solver_progress",
+                "run_id": value.get("run_id"),
+                "message": value.get("message", ""),
+            }
         return {"type": "convergence", **value}
     if topic == "vehicle-telemetry":
         return {"type": "telemetry", **value}
     if topic == "irp-alerts":
         return {"type": "alert", "data": value}
+    if topic == "replan-events":
+        return dict(value)
+    if topic == "traffic-updates":
+        return {"type": "traffic_update", **value}
     return None
 
 

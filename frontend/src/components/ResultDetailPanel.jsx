@@ -22,6 +22,34 @@ export function ResultDetailPanel({ result, runParams }) {
     <section style={{ marginTop: 24 }}>
       <h3>Chi tiết kết quả &amp; thông số lần chạy</h3>
 
+      {typeof r.ga_generations_run === "number" && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            background: "#e8f5e9",
+            borderRadius: 8,
+            fontSize: 13,
+            border: "1px solid #c8e6c9",
+          }}
+        >
+          <strong>GA — thế hệ đã chạy</strong>
+          <p style={{ margin: "8px 0 0", lineHeight: 1.5 }}>
+            Đã thực hiện <strong>{r.ga_generations_run}</strong> / {r.ga_generations_limit ?? "—"} thế hệ (mục tiêu tối đa).
+            {r.ga_stop_reason === "stagnation" && (
+              <> Lý do dừng: <strong>hội tụ</strong> (không giảm best đủ trong {r.ga_stagnation_window ?? "—"} thế hệ liên tiếp).</>
+            )}
+            {r.ga_stop_reason === "time_limit" && (
+              <> Lý do dừng: hết <strong>time limit</strong> CPU.</>
+            )}
+            {r.ga_stop_reason === "max_generations" && <> Đã chạy đủ số thế hệ cấu hình.</>}
+            {r.ga_stop_reason && !["stagnation", "time_limit", "max_generations"].includes(r.ga_stop_reason) && (
+              <> Mã dừng backend: <code>{r.ga_stop_reason}</code></>
+            )}
+          </p>
+        </div>
+      )}
+
       {runParams && (
         <div
           style={{

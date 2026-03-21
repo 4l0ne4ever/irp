@@ -37,13 +37,17 @@ def build_monitor_context(run_dir: str, day: int) -> Dict[str, Any]:
     day_routes = sol.schedule[day]
     planned_routes: List[Dict[str, Any]] = []
     hour_samples: List[float] = []
+    customer_ids_on_day: List[int] = []
 
     for route in day_routes:
         hour_samples.append(float(route.depart_h))
         path_idx: List[int] = [0]
         for cust_1b, _qty, arr_h in route.stops:
-            path_idx.append(int(cust_1b))
+            ci = int(cust_1b)
+            path_idx.append(ci)
             hour_samples.append(float(arr_h))
+            if ci > 0:
+                customer_ids_on_day.append(ci)
         if route.stops:
             path_idx.append(0)
         latlon_path = build_routed_latlon_path(coords, path_idx)
@@ -69,6 +73,7 @@ def build_monitor_context(run_dir: str, day: int) -> Dict[str, Any]:
         "m": int(inst.m),
         "depot": depot,
         "customers": customers,
+        "customer_ids_on_day": sorted(set(customer_ids_on_day)),
         "planned_routes": planned_routes,
         "day_window_h": {"start": round(t_lo, 2), "end": round(t_hi, 2)},
     }

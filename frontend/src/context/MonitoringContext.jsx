@@ -12,6 +12,16 @@ const initialState = {
   simTimeH: 0,
   violatedVehicles: {},
   monitorError: null,
+  planRevision: 0,
+  trafficModelLabel: "",
+  replanCooldownUntilMs: 0,
+  preReplanMonitoringState: null,
+  planRevisionUpdatedAt: null,
+  replayRestartAfterReplan: false,
+  trafficFactor: null,
+  trafficSource: null,
+  trafficUpdatedAt: null,
+  replayStartedAtMs: null,
 };
 
 function reducer(state, action) {
@@ -22,6 +32,15 @@ function reducer(state, action) {
         monitorRunId: action.runId,
         selectedDay: action.selectedDay ?? 0,
       };
+    case "CONTEXT_META":
+      return {
+        ...state,
+        planRevision: action.planRevision ?? state.planRevision,
+        trafficModelLabel: action.trafficModelLabel ?? state.trafficModelLabel,
+        planRevisionUpdatedAt: action.planRevisionUpdatedAt ?? state.planRevisionUpdatedAt,
+      };
+    case "CLEAR_REPLAY_RESTART":
+      return { ...state, replayRestartAfterReplan: false };
     case "SET_DAY":
       if (action.day === state.selectedDay) return state;
       return {
@@ -34,6 +53,18 @@ function reducer(state, action) {
         simTimeH: 0,
         monitoringState: "idle",
         monitorError: null,
+        preReplanMonitoringState: null,
+        replayRestartAfterReplan: false,
+        trafficFactor: null,
+        trafficSource: null,
+        trafficUpdatedAt: null,
+        replayStartedAtMs: null,
+      };
+    case "MONITOR_STOP_LOCAL":
+      return {
+        ...state,
+        monitoringState: "idle",
+        replayStartedAtMs: null,
       };
     case "MON_API_STARTED":
       return {
@@ -45,6 +76,7 @@ function reducer(state, action) {
         alerts: [],
         violatedVehicles: {},
         simTimeH: 0,
+        preReplanMonitoringState: null,
       };
     case "WS_MESSAGE": {
       const m = action.payload;
@@ -89,10 +121,63 @@ function reducer(state, action) {
         };
       }
       if (m.type === "sim_complete" && m.day === state.selectedDay) {
-        return { ...state, monitoringState: "complete" };
+        return {
+          ...state,
+          monitoringState: m.cancelled ? "idle" : "complete",
+          replayStartedAtMs: null,
+        };
       }
       if (m.type === "monitor_error" && m.day === state.selectedDay) {
-        return { ...state, monitoringState: "idle", monitorError: m.message || "Monitor error" };
+        return {
+          ...state,
+          monitoringState: "idle",
+          monitorError: m.message || "Monitor error",
+          replayStartedAtMs: null,
+        };
+      }
+      if (m.type === "replan_started" && m.day === state.selectedDay) {
+        return {
+          ...state,
+          preReplanMonitoringState: state.monitoringState,
+          monitoringState: "replanning",
+          monitorError: null,
+        };
+      }
+      if (m.type === "replan_complete" && m.day === state.selectedDay) {
+        const pr = typeof m.plan_revision === "number" ? m.plan_revision : state.planRevision + 1;
+        const back = state.preReplanMonitoringState;
+        const nextMon =
+          back === "simulating" ? "simulating" : back === "complete" ? "complete" : "idle";
+        return {
+          ...state,
+          monitoringState: nextMon,
+          preReplanMonitoringState: null,
+          planRevision: pr,
+          planRevisionUpdatedAt: m.plan_revision_updated_at ?? state.planRevisionUpdatedAt,
+          replanCooldownUntilMs: Date.now() + 120000,
+          monitorError: null,
+          replayRestartAfterReplan: back === "simulating",
+        };
+      }
+      if (m.type === "replan_error" && m.day === state.selectedDay) {
+        const back = state.preReplanMonitoringState;
+        const nextMon =
+          back === "simulating" ? "simulating" : back === "complete" ? "complete" : "idle";
+        return {
+          ...state,
+          monitoringState: state.monitoringState === "replanning" ? nextMon : state.monitoringState,
+          preReplanMonitoringState: null,
+          monitorError: m.message || "Re-plan failed",
+        };
+      }
+      if (m.type === "traffic_update") {
+        if (m.run_id != null && m.run_id !== rid) return state;
+        return {
+          ...state,
+          trafficFactor: typeof m.factor === "number" ? m.factor : state.trafficFactor,
+          trafficSource: m.source != null ? String(m.source) : state.trafficSource,
+          trafficUpdatedAt: m.ts != null ? String(m.ts) : new Date().toISOString(),
+        };
       }
       return state;
     }
@@ -127,15 +212,41 @@ export function MonitoringProvider({ children }) {
     return r.json();
   }, []);
 
+  const injectTraffic = useCallback(async (body) => {
+    const r = await fetch(`${API_BASE}/monitor/traffic/inject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(text || r.statusText);
+    if (!text.trim()) return {};
+    return JSON.parse(text);
+  }, []);
+
+  const requestReplan = useCallback(async (runId, day, simTimeH) => {
+    const r = await fetch(`${API_BASE}/monitor/replan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: runId, day, sim_time_h: simTimeH }),
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(text || r.statusText);
+    if (!text.trim()) return {};
+    return JSON.parse(text);
+  }, []);
+
   const value = useMemo(
     () => ({
       state,
       dispatch,
       startMonitor,
       stopMonitor,
+      requestReplan,
+      injectTraffic,
       API_BASE,
     }),
-    [state, startMonitor, stopMonitor]
+    [state, startMonitor, stopMonitor, requestReplan, injectTraffic]
   );
 
   return <MonCtx.Provider value={value}>{children}</MonCtx.Provider>;

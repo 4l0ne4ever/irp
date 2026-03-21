@@ -3,8 +3,18 @@ import { useRun } from "../context/RunContext.jsx";
 import { useMonitoring } from "../context/MonitoringContext.jsx";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 
-const PLANNING_TYPES = new Set(["convergence", "run_complete", "run_error"]);
-const MONITORING_TYPES = new Set(["telemetry", "alert", "sim_complete", "monitor_error"]);
+const PLANNING_TYPES = new Set(["convergence", "run_complete", "run_error", "solver_progress"]);
+const MONITORING_TYPES = new Set([
+  "telemetry",
+  "alert",
+  "sim_complete",
+  "monitor_error",
+  "monitor_stopped",
+  "replan_started",
+  "replan_complete",
+  "replan_error",
+  "traffic_update",
+]);
 
 /**
  * Single WS connection; route messages to Planning vs Monitoring reducers.

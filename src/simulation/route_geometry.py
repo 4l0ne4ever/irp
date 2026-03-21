@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 import os
 from math import atan2, cos, radians, sin, sqrt
-from typing import List, Tuple
+import threading
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -27,12 +28,26 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 6371.0088 * c
 
 
-def waypoints_for_leg(coords: np.ndarray, a: int, b: int) -> List[Tuple[float, float]]:
+def waypoints_for_leg(
+    coords: np.ndarray,
+    a: int,
+    b: int,
+    stop_event: Optional[threading.Event] = None,
+) -> List[Tuple[float, float]]:
     """Ordered (lat, lon) points along one leg: OSRM route or straight segment."""
+    if stop_event is not None and stop_event.is_set():
+        return [
+            (float(coords[a, 1]), float(coords[a, 0])),
+            (float(coords[b, 1]), float(coords[b, 0])),
+        ]
     if os.environ.get("IRP_E2E_REPLAY_NO_OSRM") == "1":
         geom = None
     else:
-        geom = get_osrm_route_geometry(coords, [a, b])
+        try:
+            _t = float(os.environ.get("IRP_OSRM_GEOMETRY_TIMEOUT", "60"))
+        except ValueError:
+            _t = 60.0
+        geom = get_osrm_route_geometry(coords, [a, b], timeout=_t)
     if geom:
         return [(float(p[0]), float(p[1])) for p in geom]
     if os.environ.get("IRP_E2E_REPLAY_NO_OSRM") != "1":

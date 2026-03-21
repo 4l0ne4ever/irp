@@ -20,6 +20,28 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+
+def _load_env_file(path: Path) -> None:
+    """Load KEY=VALUE lines into os.environ if the key is not already set."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        if not key:
+            continue
+        val = val.strip().strip('"').strip("'")
+        if key not in os.environ:
+            os.environ[key] = val
+
+
+_load_env_file(ROOT / ".env")
+
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,6 +52,7 @@ from backend.kafka_bridge import start_kafka_forwarder
 from backend.realtime import outbound_queue
 from backend.monitor_context import build_monitor_context
 from backend.telemetry_alert_worker import start_telemetry_alert_worker
+from backend.traffic_state import traffic_store
 
 INSTANCES_DIR = ROOT / "src" / "data" / "irp-instances"
 
@@ -52,6 +75,7 @@ class RunIn(BaseModel):
     source: str = Field(..., pattern="^(builtin|upload)$")
     instance_key: Optional[str] = None
     upload_token: Optional[str] = None
+    traffic_model: str = Field(default="igp", pattern="^(igp|mock_api|tomtom)$")
 
 
 class MonitorStartIn(BaseModel):
@@ -62,6 +86,19 @@ class MonitorStartIn(BaseModel):
 
 class MonitorStopIn(BaseModel):
     run_id: str
+
+
+class MonitorReplanIn(BaseModel):
+    run_id: str
+    day: int = Field(ge=0, le=30)
+    sim_time_h: float = Field(ge=0.0, le=48.0)
+
+
+class TrafficInjectIn(BaseModel):
+    from_h: float = Field(ge=0.0, le=24.0)
+    to_h: float = Field(ge=0.0, le=24.0)
+    factor: float = Field(ge=0.3, le=1.0)
+    label: str = ""
 
 
 class ConnectionManager:
@@ -191,6 +228,19 @@ def start_run(body: RunIn) -> Dict[str, str]:
         scale = "upload"
 
     job = job_manager.create_job()
+    try:
+        if body.traffic_model == "mock_api":
+            traffic_store.apply_model_key("mock_api")
+        elif body.traffic_model == "tomtom":
+            from backend.traffic_ingest import fetch_day_profile
+
+            fetch_day_profile(inst.coords)
+        else:
+            traffic_store.apply_model_key("igp")
+    except FileNotFoundError as e:
+        raise HTTPException(500, f"Traffic mock config missing: {e}") from e
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
     job_manager.start_run_thread(
         job,
         instance=inst,
@@ -200,6 +250,7 @@ def start_run(body: RunIn) -> Dict[str, str]:
         pop_size=body.pop_size,
         generations=body.generations,
         time_limit=body.time_limit,
+        traffic_model=body.traffic_model,
     )
     return {"run_id": job.run_id}
 
@@ -218,6 +269,21 @@ def monitor_start(body: MonitorStartIn) -> Dict[str, str]:
         raise HTTPException(400, "No artifacts.pkl for this run (re-run planning)")
     hours_per_real_second = max(0.05, body.speed_x / 60.0)
     try:
+        if job.traffic_model == "mock_api":
+            traffic_store.apply_model_key("mock_api")
+        elif job.traffic_model == "tomtom":
+            from backend.traffic_ingest import fetch_day_profile
+            from src.experiments.runner import load_planning_artifacts
+
+            inst, _sol = load_planning_artifacts(job.run_dir)
+            fetch_day_profile(inst.coords)
+        else:
+            traffic_store.apply_model_key("igp")
+    except FileNotFoundError as e:
+        raise HTTPException(500, f"Traffic mock config missing: {e}") from e
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
+    try:
         job_manager.start_monitor_replay_thread(
             body.run_id, day=body.day, hours_per_real_second=hours_per_real_second
         )
@@ -231,7 +297,44 @@ def monitor_stop(body: MonitorStopIn) -> Dict[str, str]:
     if job_manager.get_job(body.run_id) is None:
         raise HTTPException(404, "Unknown run_id")
     job_manager.stop_monitor_replay(body.run_id)
+    outbound_queue.put({"type": "monitor_stopped", "run_id": body.run_id})
     return {"status": "stopped"}
+
+
+@app.post("/monitor/traffic/inject")
+def monitor_traffic_inject(body: TrafficInjectIn) -> Dict[str, str]:
+    from datetime import datetime, timezone
+
+    from src.messaging.kafka_convergence import emit_traffic_update
+
+    lo = min(body.from_h, body.to_h)
+    hi = max(body.from_h, body.to_h)
+    traffic_store.inject_event(lo, hi, body.factor, body.label or "injected")
+    obs = traffic_store.get_current_observation()
+    payload = {
+        "factor": obs.get("current_factor"),
+        "source": "injected",
+        "label": body.label,
+        "from_h": lo,
+        "to_h": hi,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    emit_traffic_update(payload)
+    outbound_queue.put({"type": "traffic_update", **payload})
+    return {"status": "ok"}
+
+
+@app.post("/monitor/replan")
+def monitor_replan(body: MonitorReplanIn) -> Dict[str, str]:
+    job = job_manager.get_job(body.run_id)
+    if job is None:
+        raise HTTPException(404, "Unknown run_id")
+    err = job_manager.try_begin_replan(job, day=body.day, sim_time_h=body.sim_time_h)
+    if err:
+        if "cooldown" in err:
+            raise HTTPException(429, err)
+        raise HTTPException(400, err)
+    return {"status": "started"}
 
 
 @app.get("/monitor/context")
@@ -249,6 +352,14 @@ def monitor_context(run_id: str = Query(...), day: int = Query(0, ge=0, le=30)) 
         payload = build_monitor_context(job.run_dir, day)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    payload["plan_revision"] = job.plan_revision
+    payload["traffic_model"] = job.traffic_model
+    payload["plan_revision_updated_at"] = job.plan_revision_updated_at
+    tx = traffic_store.get_current_observation()
+    payload["traffic_factor"] = tx.get("current_factor")
+    _act = traffic_store.get_active()
+    payload["traffic_source"] = _act.source if _act is not None else tx.get("source")
+    payload["traffic_updated_at"] = tx.get("timestamp")
     return JSONResponse(content=json.loads(json.dumps(payload, default=str)))
 
 

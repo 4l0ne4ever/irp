@@ -10,7 +10,7 @@ import numpy as np
 
 from src.core.instance import Instance
 from src.core.solution import Route, Solution
-from src.core.traffic import igp_travel_time, static_travel_time
+from src.core.traffic import TravelTimeModel
 from src.core.inventory import simulate_inventory, check_feasibility, compute_inventory_cost
 from src.core.constants import DEPARTURE_SLOTS_MORNING, DEPARTURE_SLOTS_AFTERNOON
 from .chromosome import Chromosome, copy_chromosome
@@ -40,6 +40,7 @@ def two_opt_route(
     route: Route,
     inst: Instance,
     use_dynamic: bool = True,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Route:
     """
     Apply 2-opt improvement to a single route.
@@ -73,7 +74,7 @@ def two_opt_route(
 
     best_order = customers[:]
     best_cost = _compute_route_cost(
-        best_order, inst, route.depart_h, route.day, q_day, use_dynamic
+        best_order, inst, route.depart_h, route.day, q_day, use_dynamic, travel_model
     )[0]
     improved = True
 
@@ -83,7 +84,7 @@ def two_opt_route(
             for j in range(i + 1, n_stops):
                 new_order = best_order[:i] + best_order[i:j + 1][::-1] + best_order[j + 1:]
                 new_cost = _compute_route_cost(
-                    new_order, inst, route.depart_h, route.day, q_day, use_dynamic
+                    new_order, inst, route.depart_h, route.day, q_day, use_dynamic, travel_model
                 )[0]
 
                 if new_cost < best_cost - 1e-6:
@@ -95,7 +96,7 @@ def two_opt_route(
                 break
 
     # Rebuild route with new order
-    _, stops = _compute_route_cost(best_order, inst, route.depart_h, route.day, q_day, use_dynamic)
+    _, stops = _compute_route_cost(best_order, inst, route.depart_h, route.day, q_day, use_dynamic, travel_model)
 
     return Route(
         vehicle_id=route.vehicle_id,
@@ -109,6 +110,7 @@ def or_opt_day(
     routes: List[Route],
     inst: Instance,
     use_dynamic: bool = True,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> List[Route]:
     """
     Or-opt: relocate 1 or 2 consecutive customers between routes on the same day.
@@ -163,9 +165,9 @@ def or_opt_day(
                     q_day_2[c] = q
 
                 cost_1, _ = _compute_route_cost(
-                    custs_1, inst, r1.depart_h, r1.day, q_day_1, use_dynamic)
+                    custs_1, inst, r1.depart_h, r1.day, q_day_1, use_dynamic, travel_model)
                 cost_2, _ = _compute_route_cost(
-                    custs_2, inst, r2.depart_h, r2.day, q_day_2, use_dynamic)
+                    custs_2, inst, r2.depart_h, r2.day, q_day_2, use_dynamic, travel_model)
                 old_total = cost_1 + cost_2
 
                 # Try segment sizes 1 and 2
@@ -190,7 +192,7 @@ def or_opt_day(
                         for cc in new_custs_1:
                             q_combined[cc] = qty_1[cc]
                         new_cost_1, _ = _compute_route_cost(
-                            new_custs_1, inst, r1.depart_h, r1.day, q_combined, use_dynamic)
+                            new_custs_1, inst, r1.depart_h, r1.day, q_combined, use_dynamic, travel_model)
 
                         # Try all insertion positions in r2
                         best_new_cost_2 = float('inf')
@@ -201,7 +203,7 @@ def or_opt_day(
                             for cc in trial:
                                 q_trial[cc] = qty_2.get(cc, qty_1.get(cc, 0))
                             trial_cost, trial_stops = _compute_route_cost(
-                                trial, inst, r2.depart_h, r2.day, q_trial, use_dynamic)
+                                trial, inst, r2.depart_h, r2.day, q_trial, use_dynamic, travel_model)
                             if trial_cost < best_new_cost_2:
                                 best_new_cost_2 = trial_cost
                                 best_new_stops = trial_stops
@@ -213,7 +215,7 @@ def or_opt_day(
                             for cc in new_custs_1:
                                 q_new_1[cc] = qty_1[cc]
                             _, new_stops_1 = _compute_route_cost(
-                                new_custs_1, inst, r1.depart_h, r1.day, q_new_1, use_dynamic)
+                                new_custs_1, inst, r1.depart_h, r1.day, q_new_1, use_dynamic, travel_model)
 
                             routes[r1_idx] = Route(
                                 vehicle_id=r1.vehicle_id, day=r1.day,
@@ -232,6 +234,7 @@ def time_shift(
     inst: Instance,
     use_dynamic: bool = True,
     rng: Optional[np.random.Generator] = None,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Chromosome:
     """
     Time-Shift Neighborhood Search — core contribution (DevGuide §3.6).
@@ -273,10 +276,11 @@ def time_shift(
         routes, _, _ = _decode_day(
             best.pi, best.Y[:, t], inst, t, q_matrix[:, t],
             morning_slots, afternoon_slots, use_dynamic, m,
+            travel_model=travel_model,
         )
         dc, tc = 0.0, 0.0
         for r in routes:
-            d, tt = _decompose_route_cost(r, inst, use_dynamic)
+            d, tt = _decompose_route_cost(r, inst, use_dynamic, travel_model)
             dc += d
             tc += tt
         day_dist.append(dc)
@@ -322,10 +326,12 @@ def time_shift(
                 routes_t, tw_t, cap_t = _decode_day(
                     candidate.pi, candidate.Y[:, t], inst, t, cand_q[:, t],
                     morning_slots, afternoon_slots, use_dynamic, m,
+                    travel_model=travel_model,
                 )
                 routes_tn, tw_tn, cap_tn = _decode_day(
                     candidate.pi, candidate.Y[:, t_new], inst, t_new, cand_q[:, t_new],
                     morning_slots, afternoon_slots, use_dynamic, m,
+                    travel_model=travel_model,
                 )
 
                 if tw_t + tw_tn + cap_t + cap_tn > 0:
@@ -334,13 +340,13 @@ def time_shift(
                 # Compute new costs for affected days
                 new_dist_t, new_time_t = 0.0, 0.0
                 for r in routes_t:
-                    d, tt = _decompose_route_cost(r, inst, use_dynamic)
+                    d, tt = _decompose_route_cost(r, inst, use_dynamic, travel_model)
                     new_dist_t += d
                     new_time_t += tt
 
                 new_dist_tn, new_time_tn = 0.0, 0.0
                 for r in routes_tn:
-                    d, tt = _decompose_route_cost(r, inst, use_dynamic)
+                    d, tt = _decompose_route_cost(r, inst, use_dynamic, travel_model)
                     new_dist_tn += d
                     new_time_tn += tt
 
@@ -371,6 +377,7 @@ def apply_local_search(
     use_dynamic: bool = True,
     use_time_shift: bool = True,
     rng: Optional[np.random.Generator] = None,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Chromosome:
     """
     Apply local search pipeline.
@@ -394,28 +401,28 @@ def apply_local_search(
     """
     # Step 1: Time-Shift (only for Scenario C)
     if use_time_shift:
-        improved = time_shift(chrom, inst, use_dynamic=use_dynamic, rng=rng)
+        improved = time_shift(chrom, inst, use_dynamic=use_dynamic, rng=rng, travel_model=travel_model)
     else:
         improved = copy_chromosome(chrom)
 
     # Step 2: 2-opt on each route, then Or-opt between routes per day
-    sol = decode_chromosome(improved, inst, use_dynamic=use_dynamic)
+    sol = decode_chromosome(improved, inst, use_dynamic=use_dynamic, travel_model=travel_model)
 
     any_improved = False
     for t in range(inst.T):
         # Intra-route: 2-opt
         for r_idx, route in enumerate(sol.schedule[t]):
             if len(route.stops) > 2:
-                new_route = two_opt_route(route, inst, use_dynamic=use_dynamic)
-                old_d, old_t = _decompose_route_cost(route, inst, use_dynamic)
-                new_d, new_t = _decompose_route_cost(new_route, inst, use_dynamic)
+                new_route = two_opt_route(route, inst, use_dynamic=use_dynamic, travel_model=travel_model)
+                old_d, old_t = _decompose_route_cost(route, inst, use_dynamic, travel_model)
+                new_d, new_t = _decompose_route_cost(new_route, inst, use_dynamic, travel_model)
                 if (new_d + new_t) < (old_d + old_t) - 1e-6:
                     sol.schedule[t][r_idx] = new_route
                     any_improved = True
 
         # Inter-route: Or-opt (relocate customers between routes)
         if len(sol.schedule[t]) >= 2:
-            or_opt_day(sol.schedule[t], inst, use_dynamic=use_dynamic)
+            or_opt_day(sol.schedule[t], inst, use_dynamic=use_dynamic, travel_model=travel_model)
             any_improved = True
 
     if any_improved:
@@ -423,7 +430,7 @@ def apply_local_search(
         sol.cost_time = 0.0
         for t in range(inst.T):
             for route in sol.schedule[t]:
-                d_cost, t_cost = _decompose_route_cost(route, inst, use_dynamic)
+                d_cost, t_cost = _decompose_route_cost(route, inst, use_dynamic, travel_model)
                 sol.cost_distance += d_cost
                 sol.cost_time += t_cost
 

@@ -109,7 +109,7 @@ export default function App() {
       return;
     }
     setBusy(true);
-    dispatch({ type: "RESET" });
+    const trafficModel = state.trafficModel;
     try {
       const body = {
         scenario,
@@ -120,6 +120,7 @@ export default function App() {
         source,
         instance_key: source === "builtin" ? instanceKey : undefined,
         upload_token: source === "upload" ? uploadToken : undefined,
+        traffic_model: trafficModel,
       };
       const { run_id } = await startRun(body);
       setLastRunParams({
@@ -132,7 +133,7 @@ export default function App() {
         instanceKey: source === "builtin" ? instanceKey : null,
         showGa: scenario === "B" || scenario === "C",
       });
-      dispatch({ type: "RUN_STARTED", runId: run_id });
+      dispatch({ type: "RUN_STARTED", runId: run_id, trafficModel });
     } catch (e) {
       setErr(String(e.message || e));
       dispatch({ type: "RESET" });
@@ -212,6 +213,8 @@ export default function App() {
             scenario={scenario}
             onScenario={setScenario}
             showGa={showGa}
+            trafficModel={state.trafficModel}
+            onTrafficModel={(v) => dispatch({ type: "SET_TRAFFIC_MODEL", value: v })}
             preset={preset}
             onPreset={applyPreset}
             popSize={popSize}
@@ -233,6 +236,25 @@ export default function App() {
           />
 
           <main>
+            {state.runState === "running" && state.solverProgressMessage && (
+              <div
+                role="status"
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 14px",
+                  background: "#fff8e1",
+                  border: "1px solid #ffb74d",
+                  borderRadius: 8,
+                  fontSize: 14,
+                  color: "#4e342e",
+                  lineHeight: 1.45,
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 6 }}>Solver vẫn đang chạy (không phải treo)</strong>
+                {state.solverProgressMessage}
+              </div>
+            )}
+
             {state.runState === "complete" && state.result && <KpiCards result={state.result} />}
 
             {state.runState === "complete" && state.result && (
@@ -242,7 +264,7 @@ export default function App() {
             {showGa && (
               <section style={{ marginTop: 24 }}>
                 <h3>Convergence (live)</h3>
-                <ConvergenceChart data={state.convergence} />
+                <ConvergenceChart data={state.convergence} configuredGenerations={lastRunParams?.generations} />
               </section>
             )}
 

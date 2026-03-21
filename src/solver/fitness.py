@@ -3,12 +3,13 @@ Fitness evaluation for IRP-TW-DT.
 Computes total cost + penalties for a chromosome.
 """
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
 from src.core.instance import Instance
 from src.core.solution import Solution
+from src.core.traffic import TravelTimeModel
 from src.core.constants import LAMBDA_STOCKOUT, LAMBDA_CAPACITY, LAMBDA_TW
 from .chromosome import Chromosome
 from .decode import decode_chromosome
@@ -18,6 +19,7 @@ def evaluate(
     chrom: Chromosome,
     inst: Instance,
     use_dynamic: bool = True,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Tuple[float, Solution]:
     """
     Evaluate a chromosome: decode and compute fitness.
@@ -37,7 +39,7 @@ def evaluate(
     fitness : float
     solution : Solution
     """
-    sol = decode_chromosome(chrom, inst, use_dynamic=use_dynamic)
+    sol = decode_chromosome(chrom, inst, use_dynamic=use_dynamic, travel_model=travel_model)
 
     fitness = sol.total_cost + sol.total_penalty
     chrom._fitness = fitness

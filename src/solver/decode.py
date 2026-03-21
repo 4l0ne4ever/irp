@@ -3,13 +3,13 @@ TD-Split Algorithm — DP-based route splitting for IRP-TW-DT.
 Decodes a Two-part Chromosome into a complete Solution.
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
 from src.core.instance import Instance
 from src.core.solution import Route, Solution
-from src.core.traffic import igp_travel_time, static_travel_time
+from src.core.traffic import IGPModel, TravelTimeModel, static_travel_time
 from src.core.inventory import simulate_inventory, compute_inventory_cost
 from src.core.constants import (
     DEPARTURE_SLOTS_MORNING, DEPARTURE_SLOTS_AFTERNOON,
@@ -26,6 +26,7 @@ def td_split(
     q_day: np.ndarray,
     use_dynamic: bool = True,
     max_routes: int = None,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Tuple[List[Route], float]:
     """
     Vehicle-limited split procedure (extension of Prins 2004).
@@ -99,7 +100,7 @@ def td_split(
 
             route_customers = customers[i - 1:j]
             cost, stops = _compute_route_cost(
-                route_customers, inst, depart_h, day, q_day, use_dynamic
+                route_customers, inst, depart_h, day, q_day, use_dynamic, travel_model
             )
             seg_cost[(i - 1, j)] = cost
             seg_stops[(i - 1, j)] = stops
@@ -136,7 +137,7 @@ def td_split(
         total_cost = 0.0
         for c in customers:
             cost, stops = _compute_route_cost(
-                [c], inst, depart_h, day, q_day, use_dynamic
+                [c], inst, depart_h, day, q_day, use_dynamic, travel_model
             )
             routes.append(Route(
                 vehicle_id=len(routes), day=day,
@@ -155,7 +156,7 @@ def td_split(
             # Fallback for remaining unassigned customers
             for c in customers[:j]:
                 cost_c, stops_c = _compute_route_cost(
-                    [c], inst, depart_h, day, q_day, use_dynamic
+                    [c], inst, depart_h, day, q_day, use_dynamic, travel_model
                 )
                 routes.append(Route(
                     vehicle_id=0, day=day,
@@ -185,6 +186,7 @@ def _compute_route_cost(
     day: int,
     q_day: np.ndarray,
     use_dynamic: bool = True,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Tuple[float, List[Tuple[int, float, float]]]:
     """
     Compute the cost and stops for a single route with time propagation.
@@ -196,6 +198,7 @@ def _compute_route_cost(
     stops : List[Tuple[int, float, float]]
         (customer_1based, delivery_qty, arrival_time) for each stop.
     """
+    tm = travel_model if travel_model is not None else IGPModel()
     cost_distance = 0.0
     cost_time = 0.0
     tw_penalty = 0.0
@@ -209,7 +212,7 @@ def _compute_route_cost(
 
         # Travel time
         if use_dynamic:
-            tt = igp_travel_time(dist, current_time)
+            tt = tm.duration_h(prev_node, cust_1based, current_time, dist)
         else:
             tt = static_travel_time(dist)
 
@@ -240,7 +243,7 @@ def _compute_route_cost(
     # Return to depot
     dist_return = inst.dist[prev_node, 0]
     if use_dynamic:
-        tt_return = igp_travel_time(dist_return, current_time)
+        tt_return = tm.duration_h(prev_node, 0, current_time, dist_return)
     else:
         tt_return = static_travel_time(dist_return)
 
@@ -294,6 +297,7 @@ def _decode_day(
     afternoon_slots: List[float],
     use_dynamic: bool,
     m: int,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Tuple[List[Route], int, int]:
     """
     Decode routing for a single day.
@@ -358,6 +362,7 @@ def _decode_day(
             routes, cost = td_split(
                 group, inst, depart_h, day, q_day, use_dynamic,
                 max_routes=m,  # Vehicle-limited DP (Prins 2004)
+                travel_model=travel_model,
             )
             if cost < best_grp_cost:
                 best_grp_cost = cost
@@ -387,6 +392,7 @@ def decode_chromosome(
     chrom: Chromosome,
     inst: Instance,
     use_dynamic: bool = True,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Solution:
     """
     Decode a Two-part Chromosome into a complete Solution.
@@ -434,6 +440,7 @@ def decode_chromosome(
         routes, tw_v, cap_v = _decode_day(
             chrom.pi, chrom.Y[:, t], inst, t, q_matrix[:, t],
             morning_slots, afternoon_slots, use_dynamic, m,
+            travel_model=travel_model,
         )
         schedule.append(routes)
         total_tw_violations += tw_v
@@ -446,7 +453,7 @@ def decode_chromosome(
     cost_time = 0.0
     for t in range(T):
         for route in schedule[t]:
-            d_cost, t_cost = _decompose_route_cost(route, inst, use_dynamic)
+            d_cost, t_cost = _decompose_route_cost(route, inst, use_dynamic, travel_model)
             cost_distance += d_cost
             cost_time += t_cost
 
@@ -478,8 +485,10 @@ def _decompose_route_cost(
     route: Route,
     inst: Instance,
     use_dynamic: bool = True,
+    travel_model: Optional[TravelTimeModel] = None,
 ) -> Tuple[float, float]:
     """Decompose a route's cost into distance and time components."""
+    tm = travel_model if travel_model is not None else IGPModel()
     cost_distance = 0.0
     cost_time = 0.0
     current_time = route.depart_h
@@ -490,7 +499,7 @@ def _decompose_route_cost(
         dist = inst.dist[prev_node, cust_1based]
 
         if use_dynamic:
-            tt = igp_travel_time(dist, current_time)
+            tt = tm.duration_h(prev_node, cust_1based, current_time, dist)
         else:
             tt = static_travel_time(dist)
 
@@ -507,7 +516,7 @@ def _decompose_route_cost(
     # Return to depot
     dist_return = inst.dist[prev_node, 0]
     if use_dynamic:
-        tt_return = igp_travel_time(dist_return, current_time)
+        tt_return = tm.duration_h(prev_node, 0, current_time, dist_return)
     else:
         tt_return = static_travel_time(dist_return)
 

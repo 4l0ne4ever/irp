@@ -43,7 +43,7 @@ def replay_no_osrm(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(
-        "src.simulation.replay.get_osrm_route_geometry",
+        "src.simulation.route_geometry.get_osrm_route_geometry",
         _no_geom,
     )
 

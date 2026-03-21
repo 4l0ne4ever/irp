@@ -1,38 +1,31 @@
 """
-Load IRP-TW-DT instances from user-uploaded JSON or CSV.
-Builds Instance with OSRM distance matrix; raises RuntimeError on any failure.
+Load IRP-TW-DT instances from uploaded JSON or CSV.
+OSRM distance matrix is required — raises RuntimeError on failure (no fallback).
 """
 
-import json
+import csv as csv_module
 import io
-from typing import Optional, Tuple
+import json
+from typing import Tuple
 
 import numpy as np
 
 from src.core.instance import Instance, validate_instance
 from src.core.constants import (
-    DEFAULT_T, DEFAULT_Q, SERVICE_TIME, C_D, C_T,
+    DEFAULT_T,
+    DEFAULT_Q,
+    SERVICE_TIME,
+    C_D,
+    C_T,
 )
 from src.data.distances import compute_osrm_distance_matrix
 
 
 def load_from_json(file_bytes: bytes) -> Tuple[Instance, np.ndarray]:
     """
-    Parse IRP JSON upload, call OSRM, build and validate Instance.
+    Parse IRP JSON, call OSRM, build and validate Instance.
 
-    JSON format: metadata (n, T, m, c_d, c_t, Q), depot (lon, lat),
-    customers array with lon, lat, initial_inventory, min_inventory, tank_capacity,
-    service_time_h, holding_cost_vnd, time_window_start_h, time_window_end_h, daily_demand.
-
-    Returns
-    -------
-    (Instance, dist_matrix)
-        Validated instance and OSRM distance matrix (same as instance.dist).
-
-    Raises
-    ------
-    RuntimeError
-        On parse error, OSRM failure, or validation failure.
+    Raises RuntimeError on parse, OSRM, or validation errors.
     """
     try:
         data = json.loads(file_bytes.decode("utf-8"))
@@ -51,7 +44,6 @@ def load_from_json(file_bytes: bytes) -> Tuple[Instance, np.ndarray]:
     if n != len(customers):
         raise RuntimeError(f"metadata.n={n} but customers has {len(customers)} entries")
 
-    # coords: index 0 = depot, 1..n = customers; columns [lon, lat]
     coords = np.zeros((n + 1, 2))
     coords[0] = [float(depot["lon"]), float(depot["lat"])]
     for i, c in enumerate(customers):
@@ -77,13 +69,22 @@ def load_from_json(file_bytes: bytes) -> Tuple[Instance, np.ndarray]:
 
     inst = Instance(
         name=name,
-        n=n, T=T, m=m,
+        n=n,
+        T=T,
+        m=m,
         coords=coords,
         dist=dist_matrix,
-        U=U, L_min=L_min, I0=I0,
-        demand=demand, h=h,
-        e=e, l=l, s=s,
-        c_d=c_d, c_t=c_t, Q=Q,
+        U=U,
+        L_min=L_min,
+        I0=I0,
+        demand=demand,
+        h=h,
+        e=e,
+        l=l,
+        s=s,
+        c_d=c_d,
+        c_t=c_t,
+        Q=Q,
     )
 
     errors = validate_instance(inst)
@@ -93,57 +94,24 @@ def load_from_json(file_bytes: bytes) -> Tuple[Instance, np.ndarray]:
     return inst, dist_matrix
 
 
-def _parse_csv_meta_line(line: str) -> dict:
-    """Parse first line like '# m=3' or '# m=3,depot_lon=105.5,depot_lat=20.99'. Returns dict of key=val."""
-    out = {}
-    line = line.strip()
-    if not line.startswith("#"):
-        return out
-    rest = line[1:].strip()
-    for part in rest.split(","):
-        part = part.strip()
-        if "=" in part:
-            k, v = part.split("=", 1)
-            k, v = k.strip(), v.strip()
-            if k == "m":
-                out["m"] = int(v)
-            elif k == "depot_lon":
-                out["depot_lon"] = float(v)
-            elif k == "depot_lat":
-                out["depot_lat"] = float(v)
-    return out
-
-
 def load_from_csv(
     file_bytes: bytes,
     depot_lon: float,
     depot_lat: float,
-    m: Optional[int] = None,
+    n: int,
+    m: int,
 ) -> Tuple[Instance, np.ndarray]:
     """
-    Parse IRP CSV upload; depot and m can come from file or params.
-    Optional first line: '# m=3' or '# m=3,depot_lon=105.5,depot_lat=20.99'. If present, m and depot are taken from it.
-    n is always the number of data rows in the CSV.
+    Parse customer CSV rows, validate row count == n, build Instance with m vehicles.
 
-    Returns (Instance, dist_matrix). Raises RuntimeError on parse/validation failure.
+    Optional first line starting with '#' (metadata) is skipped before DictReader.
     """
-    import csv as csv_module
-
     text = file_bytes.decode("utf-8")
     lines = text.splitlines()
     if not lines:
         raise RuntimeError("CSV file is empty")
 
-    meta = {}
-    data_start = 0
-    if lines[0].strip().startswith("#"):
-        meta = _parse_csv_meta_line(lines[0])
-        data_start = 1
-
-    m = int(meta["m"]) if meta.get("m") is not None else (m if m is not None else 2)
-    if meta.get("depot_lon") is not None and meta.get("depot_lat") is not None:
-        depot_lon, depot_lat = float(meta["depot_lon"]), float(meta["depot_lat"])
-
+    data_start = 1 if lines[0].strip().startswith("#") else 0
     stream = io.StringIO("\n".join(lines[data_start:]))
     try:
         reader = csv_module.DictReader(stream)
@@ -151,9 +119,8 @@ def load_from_csv(
     except Exception as e:
         raise RuntimeError(f"Invalid CSV: {e}") from e
 
-    n = len(rows)
-    if n == 0:
-        raise RuntimeError("CSV has no data rows")
+    if len(rows) != n:
+        raise RuntimeError(f"CSV has {len(rows)} data rows but n={n}")
 
     T = DEFAULT_T
     coords = np.zeros((n + 1, 2))
@@ -187,13 +154,22 @@ def load_from_csv(
 
     inst = Instance(
         name="upload_csv",
-        n=n, T=T, m=m,
+        n=n,
+        T=T,
+        m=m,
         coords=coords,
         dist=dist_matrix,
-        U=U, L_min=L_min, I0=I0,
-        demand=demand, h=h,
-        e=e, l=l, s=s,
-        c_d=C_D, c_t=C_T, Q=DEFAULT_Q,
+        U=U,
+        L_min=L_min,
+        I0=I0,
+        demand=demand,
+        h=h,
+        e=e,
+        l=l,
+        s=s,
+        c_d=C_D,
+        c_t=C_T,
+        Q=DEFAULT_Q,
     )
 
     errors = validate_instance(inst)

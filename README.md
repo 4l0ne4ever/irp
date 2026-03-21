@@ -11,39 +11,43 @@
 - **B:** HGA without Time-Shift (2-opt only)
 - **C:** HGA with Time-Shift + 2-opt
 
-## Quick start (Streamlit UI)
+## Quick start (API + React UI)
 
-The main way to run experiments is the **Streamlit web app**: configure instance, run the solver, and view results in the browser.
+Stack: **FastAPI** (REST + WebSocket), **React (Vite)** dashboard, **Kafka** for live convergence / telemetry / alerts. OSRM is required for distances (no fallback).
 
 ```bash
 # From project root
 pip install -r requirements.txt
-streamlit run app.py
+
+# Terminal 1 — Kafka must expose bootstrap (default localhost:9092) and topics:
+#   convergence-log, vehicle-telemetry, irp-alerts
+
+# Terminal 2 — API (repo root on PYTHONPATH)
+export PYTHONPATH=.
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 3 — frontend
+cd frontend && npm install && npm run dev
 ```
 
-Open `http://localhost:8501`. Then:
+Open the Vite URL (e.g. `http://localhost:5173`). Optional: `VITE_API_URL=http://127.0.0.1:8000` in `frontend/.env`. Backend env: `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:9092`), `CORS_ORIGINS` if needed.
 
-1. **Source:** Choose **Built-in instance** (set Scenario, n, m, then click **Generate**) or **Upload file** (JSON or CSV).
-2. For CSV: first load computes **OSRM** distance matrix (30–90s for large n); a spinner explains the wait. Later runs use cache.
-3. Set GA parameters if using Scenario B or C (Population size, Generations, Time limit).
-4. Click **Run Experiment**. The **Run log** section streams solver output; when the run finishes, **Results** and **Detailed metrics** appear, plus solution map and (for B/C) convergence chart.
-
-No export step: all output is shown on screen. Run artifacts are written under `/tmp/irp_runs` for the session.
+Run artifacts: `/tmp/irp_runs/<run_id>/` (configurable via job manager).
 
 ## Key features
 
-- **Streamlit UI:** Single screen for config, instance map, live run log, detailed results, solution map, convergence plot.
+- **Web UI:** Built-in instances, upload, run B/C with GA params, live WebSocket feed (Kafka-forwarded convergence, telemetry, alerts), charts and map.
 - **Real routing:** OSRM road distances + IGP time-dependent travel times (5 time zones).
-- **Instance source:** Built-in generator (Hanoi, lognormal demand, water/exclusion checks) or upload JSON/CSV (n, m from file when possible).
+- **Instance source:** Built-in `.npy` list, JSON upload, or CSV upload (**n** must equal data row count; **m** and depot from the form).
 - **Scenarios:** P, A, B, C with configurable GA (pop size, generations, time limit).
-- **Metrics:** Cost breakdown (%), feasibility, violations, deliveries, distance, inventory %, CPU time, per-day stats.
-- **Visualization:** Instance map (OSRM) and solution map (Folium + OSRM geometry).
+- **Metrics:** Cost breakdown (%), feasibility, violations, deliveries, distance, inventory %, CPU time (in API result payload).
 
 ## Project structure
 
 ```
 .
-├── app.py                    # Streamlit app (main entry for UI)
+├── backend/                  # FastAPI: main, job_manager, kafka_bridge, realtime
+├── frontend/                 # Vite + React dashboard
 ├── README.md
 ├── HUONG_DAN.md              # User guide (Vietnamese)
 ├── requirements.txt
@@ -51,6 +55,8 @@ No export step: all output is shown on screen. Run artifacts are written under `
 ├── docs/
 ├── src/
 │   ├── main.py               # CLI: run, batch, convert
+│   ├── messaging/            # Kafka producers (solver / replay)
+│   ├── simulation/           # replay → telemetry + alerts
 │   ├── core/                 # Instance, Solution, traffic, constants
 │   ├── data/                 # generator, upload_loader, distances (OSRM)
 │   ├── solver/               # HGA (hga, decode, fitness, local_search…)
@@ -79,10 +85,10 @@ Output: `results/<scenario>_<scale>_n<n>_seed<seed>/` with `result.json`, `map.h
 
 ## Upload file formats
 
-- **JSON:** Full instance (metadata with n, T, m; depot; customers with lon, lat, inventory, demand, time windows, etc.). Used as-is.
-- **CSV:** One row per customer. Optional first line: `# m=3` or `# m=3,depot_lon=105.86,depot_lat=20.99`. If present, n = number of data rows, m (and optionally depot) from that line. Otherwise enter depot manually; m defaults to 2. Columns: customer_id, lon, lat, initial_inventory, min_inventory, tank_capacity, service_time_h, holding_cost_vnd, time_window_start_h, time_window_end_h, demand_day0…demand_day6.
+- **JSON:** Full instance (metadata with n, T, m; depot; customers with `daily_demand` length T; etc.). Parsed by `load_from_json`; OSRM builds the distance matrix.
+- **CSV:** One data row per customer. Optional first line starting with `#` is skipped. You must set **n** in the UI/API equal to the number of data rows; set **m** and depot coordinates in the form. Columns: `customer_id`, `lon`, `lat`, `initial_inventory`, `min_inventory`, `tank_capacity`, `service_time_h`, `holding_cost_vnd`, `time_window_start_h`, `time_window_end_h`, `demand_day0`…`demand_day6`.
 
-Export script `export_instances.py` writes CSV with the `# m=...,depot_lon=...,depot_lat=...` header so uploaded files carry n and m.
+`export_instances.py` can emit a `# …` header line for convenience; **n** is still the row count after skipping that line.
 
 ## Parameters (constants.py)
 
@@ -102,11 +108,28 @@ Export script `export_instances.py` writes CSV with the `# m=...,depot_lon=...,d
 pytest tests/ -v
 ```
 
+**Kiểm tra stack (UI hoặc API, không script tự động trong repo):**
+
+1. Cài Kafka local (KRaft) theo `docs/ft.md` §11 — hoặc bỏ qua nếu chỉ cần chạy solver (live chart/telemetry sẽ không có).
+2. Chạy API + frontend như [Quick start](#quick-start-api--react-ui).
+3. **Qua UI:** mở Vite, chọn instance → Run → xem chart / map / KPI sau khi xong.
+4. **Qua REST:** mở `http://127.0.0.1:8000/docs` hoặc ví dụ:
+
+```bash
+curl -s http://127.0.0.1:8000/instances
+curl -s -X POST http://127.0.0.1:8000/run \
+  -H 'Content-Type: application/json' \
+  -d '{"scenario":"C","seed":42,"pop_size":20,"generations":40,"time_limit":120,"source":"builtin","instance_key":"S_n20_seed42"}'
+# dùng run_id trả về:
+curl -s http://127.0.0.1:8000/result/<run_id>
+```
+
 ## Troubleshooting
 
-- **Slow first load (upload):** OSRM matrix for many points takes 30–90s; spinner and caption explain. Subsequent loads (same file) use cache.
-- **Run does not start:** Ensure an instance is ready (Generate or Upload + wait for load), then click **Run Experiment**.
-- **OSRM errors:** Check internet; public OSRM server may rate-limit. No built-in fallback.
+- **Slow upload:** First OSRM matrix build for many points can take 30–90s.
+- **Run does not start:** Upload or select a built-in instance successfully, then POST `/run` (or use the UI).
+- **OSRM errors:** Check network; public OSRM may rate-limit. No built-in fallback.
+- **No live charts:** Ensure Kafka is running and the three topics exist; check `KAFKA_BOOTSTRAP_SERVERS`.
 
 ## References
 

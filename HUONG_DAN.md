@@ -3,7 +3,7 @@
 ## Mục lục
 
 1. [Cài đặt môi trường](#1-cài-đặt-môi-trường)
-2. [Chạy giao diện Streamlit (khuyến nghị)](#2-chạy-giao-diện-streamlit-khuyến-nghị)
+2. [Chạy giao diện web (FastAPI + React + Kafka)](#2-chạy-giao-diện-web-fastapi--react--kafka)
 3. [Cấu trúc thư mục](#3-cấu-trúc-thư-mục)
 4. [Chạy thí nghiệm qua CLI](#4-chạy-thí-nghiệm-qua-cli)
 5. [Chạy toàn bộ thí nghiệm (batch)](#5-chạy-toàn-bộ-thí-nghiệm-batch)
@@ -54,53 +54,48 @@ pip install -r requirements.txt
 ### Kiểm tra
 
 ```bash
-python3 -c "import numpy, pandas, folium, streamlit; print('OK')"
+python3 -c "import numpy, pandas, folium, fastapi; print('OK')"
 ```
 
 ---
 
-## 2. Chạy giao diện Streamlit (khuyến nghị)
+## 2. Chạy giao diện web (FastAPI + React + Kafka)
 
-Ứng dụng chính để chạy thí nghiệm là **giao diện web Streamlit**: cấu hình trên màn hình chính, xem bản đồ instance, nhật ký chạy (live) và kết quả chi tiết ngay trên trình duyệt.
+Giao diện chính: **API FastAPI** (REST + WebSocket), **React (Vite)**, luồng realtime qua **Kafka** (hội tụ HGA, telemetry, cảnh báo). Cần **Node.js** cho frontend.
+
+### Yêu cầu Kafka
+
+Broker mặc định `localhost:9092` (đổi bằng biến `KAFKA_BOOTSTRAP_SERVERS`). Topic: `convergence-log`, `vehicle-telemetry`, `irp-alerts` (thường auto-create khi có message đầu tiên). **Cài Kafka KRaft trên máy** theo `docs/ft.md` mục 11 — plan không dùng Docker trong repo; kiểm thử bằng **UI** hoặc **REST** (`/docs`, `curl`), không có script test tự động kèm theo.
 
 ### Khởi chạy
 
+**Cửa sổ 1 — API (từ thư mục gốc `irp/`):**
+
 ```bash
-# Từ thư mục gốc dự án (irp/)
-streamlit run app.py
+export PYTHONPATH=.
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Trình duyệt sẽ mở tại `http://localhost:8501`. Nếu không, mở thủ công địa chỉ đó.
+**Cửa sổ 2 — Frontend:**
 
-### Cấu hình và chạy
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-1. **Nguồn dữ liệu (Source)**
-   - **Built-in instance:** Sinh instance ngẫu nhiên (Hà Nội, lognormal, kiểm tra vùng nước).
-     - Chọn **Scenario** (P, A, B, C), nhập **n (số khách hàng)** và **m (số xe)**.
-     - Bấm **Generate** để tạo instance và xem bản đồ OSRM (depot + khách hàng).
-   - **Upload file:** Tải lên file JSON hoặc CSV.
-     - **JSON:** Định dạng đầy đủ (metadata, depot, customers). n, m lấy từ file.
-     - **CSV:** Mỗi dòng là một khách hàng. Dòng đầu tiên có thể là dòng meta:
-       - `# m=3` hoặc `# m=3,depot_lon=105.86,depot_lat=20.99`
-       - Nếu có dòng meta thì **n** = số dòng dữ liệu, **m** (và có thể depot) lấy từ file.
-       - Nếu không có dòng meta: nhập depot (kinh độ, vĩ độ) thủ công; m mặc định = 2.
-     - **Lần tải đầu:** Ứng dụng gọi OSRM để tính ma trận khoảng cách đường bộ → có thể mất **30–90 giây** với n lớn (ví dụ n≈100). Có thông báo chờ và spinner.
-     - Lần chạy sau (cùng file) dùng bộ nhớ cache, không gọi OSRM lại.
+Mở URL Vite (thường `http://localhost:5173`). Nếu API không cùng host/port, đặt `VITE_API_URL` trong `frontend/.env` (ví dụ `http://127.0.0.1:8000`).
 
-2. **Tham số GA (chỉ khi Scenario B hoặc C)**
-   - Preset: Full Defaults / Fast Demo.
-   - Population size, Generations, Time limit (s).
+### Cấu hình và chạy (tóm tắt)
 
-3. **Chạy thí nghiệm**
-   - Khi đã có instance (Generate xong hoặc Upload và load xong), dòng trạng thái hiển thị: *"Instance ready (n=..., m=...). Click **Run Experiment** to start the solver."*
-   - Bấm **Run Experiment**. Solver chạy nền; trang tự làm mới mỗi giây.
-   - **Run log:** Trong lúc chạy, nhật ký solver (và HGA nếu B/C) hiển thị live trong phần **Run log** phía dưới.
-   - Khi xong: phần **Results** hiện tổng quan (Total cost, %, Feasible, TW compliance) và **Detailed metrics** (chi phí, vi phạm, giao hàng, khoảng cách, inventory, CPU time, per-day). Có **Solution map (OSRM)** và nếu B/C có **convergence chart**.
+1. **Instance:** Chọn built-in từ danh sách, hoặc upload JSON / CSV. Với CSV: **n** phải bằng đúng số dòng dữ liệu (sau dòng `#` nếu có); nhập **m** và tọa độ depot trên form.
+2. **Scenario P/A/B/C** và tham số GA (B/C).
+3. **Chạy:** UI gọi API; WebSocket nhận sự kiện từ hàng đợi (Kafka bridge). Sau khi xong, tải kết quả qua `GET /result/{run_id}`. File run nằm dưới `/tmp/irp_runs/<run_id>/`.
 
 ### Lưu ý
 
-- Không tắt trình duyệt hay refresh trang khi đang chạy; chờ đến khi có kết quả hoặc lỗi.
-- Kết quả và log chỉ hiển thị trên màn hình; thư mục tạm `/tmp/irp_runs` dùng để lưu run (có thể dọn định kỳ).
+- Nếu không có Kafka, API vẫn chạy được nhưng biểu đồ / cảnh báo realtime có thể trống.
+- OSRM bắt buộc cho ma trận khoảng cách; không có fallback.
 
 ---
 
@@ -108,7 +103,8 @@ Trình duyệt sẽ mở tại `http://localhost:8501`. Nếu không, mở thủ
 
 ```
 irp/
-├── app.py                          # Ứng dụng Streamlit (điểm vào chính)
+├── backend/                        # FastAPI, job_manager, kafka_bridge
+├── frontend/                       # React + Vite
 ├── pyproject.toml
 ├── requirements.txt
 ├── README.md
@@ -137,7 +133,7 @@ irp/
 
 ## 4. Chạy thí nghiệm qua CLI
 
-Nếu không dùng Streamlit, có thể chạy một lần từ dòng lệnh:
+Có thể chạy một lần từ dòng lệnh (không qua web):
 
 ```bash
 python3 -m src.main run --scenario C --n 20 --m 2 --seed 42 --output results
@@ -159,13 +155,10 @@ Chạy ma trận thí nghiệm (scenario × scale × seed). Thời gian ước t
 
 ## 6. Đọc kết quả
 
-### Trên Streamlit
+### Trên giao diện web
 
-- **Results:** Tổng quan (Total cost, %, Feasible, TW compliance).
-- **Detailed metrics (expand):** Chi phí (VND + %), vi phạm (TW, stockout, capacity, vehicle), giao hàng & khoảng cách, inventory, CPU time, per-day.
-- **Run log:** Nhật ký solver (và HGA) trong lúc chạy và sau khi xong.
-- **Solution map:** Bản đồ Folium với tuyến OSRM.
-- **Convergence chart:** Đường hội tụ HGA (B/C).
+- KPI, biểu đồ hội tụ (B/C), bản đồ tuyến, luồng cảnh báo — dữ liệu realtime qua WebSocket (Kafka).
+- Kết quả đầy đủ: JSON từ `GET /result/{run_id}` sau khi job xong.
 
 ### File result.json (CLI / thư mục kết quả)
 
@@ -183,7 +176,7 @@ Mở bằng trình duyệt để xem bản đồ tương tác (depot, khách hà
 python3 export_instances.py
 ```
 
-Xuất các instance trong `src/data/irp-instances/` sang `src/data/irp-instances-json/` (JSON + CSV). CSV có dòng đầu tiên dạng `# m=...,depot_lon=...,depot_lat=...` để Streamlit/loader đọc n và m từ file.
+Xuất các instance trong `src/data/irp-instances/` sang `src/data/irp-instances-json/` (JSON + CSV). CSV có thể có dòng `# ...` (bị bỏ qua khi load); **n** = số dòng dữ liệu; **m** và depot nhập khi upload.
 
 Cột CSV: `customer_id`, `lon`, `lat`, `initial_inventory`, `min_inventory`, `tank_capacity`, `service_time_h`, `holding_cost_vnd`, `time_window_start_h`, `time_window_end_h`, `demand_day0` … `demand_day6`.
 
@@ -217,9 +210,10 @@ Trong `src/core/constants.py`: `LAMBDA_TW`, `C_D`, `C_T`, `DEFAULT_Q`, `DEFAULT_
 
 ## 11. Xử lý lỗi thường gặp
 
-- **ModuleNotFoundError 'src':** Chạy từ thư mục gốc dự án, dùng `python3 -m src.main ...` hoặc `streamlit run app.py`.
-- **Load file chậm:** Lần đầu load CSV/JSON với n lớn phải gọi OSRM (30–90s). Có spinner và caption giải thích.
-- **Run không bắt đầu:** Đảm bảo đã Generate (built-in) hoặc Upload và chờ load xong; sau đó bấm **Run Experiment**.
+- **ModuleNotFoundError 'src':** Chạy từ thư mục gốc dự án; với API dùng `PYTHONPATH=.` hoặc `python3 -m src.main ...`.
+- **Load file chậm:** Lần đầu load CSV/JSON với n lớn phải gọi OSRM (30–90s).
+- **Run không bắt đầu:** Đảm bảo đã chọn built-in hoặc upload thành công, rồi chạy từ UI hoặc `POST /run`.
+- **Realtime trống:** Kiểm tra Kafka và topic; biến `KAFKA_BOOTSTRAP_SERVERS`.
 - **feasible = False / tw_violations > 0:** Kiểm tra kết nối OSRM; thử tăng số xe `m`.
 - **OSRM lỗi:** Kiểm tra internet; OSRM public server đôi khi giới hạn. Không có fallback nội bộ.
 
@@ -229,7 +223,7 @@ Trong `src/core/constants.py`: `LAMBDA_TW`, `C_D`, `C_T`, `DEFAULT_Q`, `DEFAULT_
 
 - Dùng `python` thay cho `python3`.
 - Kích hoạt venv: `.venv\Scripts\activate.bat` (CMD) hoặc `.venv\Scripts\Activate.ps1` (PowerShell).
-- Chạy Streamlit: `streamlit run app.py`.
+- Chạy API: `set PYTHONPATH=.` rồi `uvicorn backend.main:app --host 0.0.0.0 --port 8000`; frontend: `cd frontend && npm run dev`.
 - Đường dẫn có dấu cách: dùng dấu ngoặc kép, ví dụ `cd "C:\Users\...\irp"`.
 
 ---

@@ -5,6 +5,9 @@ env/
 ENV/
 .env
 
+# Node (frontend)
+node_modules/
+
 # Python Bytecode & Cache
 __pycache__/
 *.py[cod]

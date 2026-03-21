@@ -229,6 +229,7 @@ def run_single_from_instance(
     time_limit: float = GA_TIME_LIMIT,
     output_dir: str = "results",
     seed: int = 42,
+    run_id: Optional[str] = None,
 ) -> tuple:
     """
     Run a single experiment from a pre-built, validated Instance (e.g. from upload).
@@ -248,14 +249,22 @@ def run_single_from_instance(
         Parent directory for the run subfolder.
     seed : int
         Random seed for B/C.
+    run_id : str, optional
+        If set, HGA emits convergence rows to Kafka with this id.
 
     Returns
     -------
-    (Dict, str)
-        result_dict (same shape as run_single), run_directory path.
+    (Dict, str, Solution)
+        result_dict, run_directory path, best solution (for simulation replay).
     """
+    from src.messaging.kafka_convergence import (
+        clear_convergence_run_id,
+        set_convergence_run_id,
+    )
+
     n, m = instance.n, instance.m
     os.makedirs(output_dir, exist_ok=True)
+    set_convergence_run_id(run_id)
     log_path = os.path.join(output_dir, "run_log.txt")
     file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"))
@@ -295,8 +304,9 @@ def run_single_from_instance(
         run_dir = _save_run_output(output_dir, scenario, scale, n, seed, instance, sol, result,
                                    convergence=convergence)
         logger.info("Run complete. Output in %s", run_dir)
-        return result, run_dir
+        return result, run_dir, sol
     finally:
+        clear_convergence_run_id()
         root_logger.removeHandler(file_handler)
         file_handler.close()
 

@@ -20,6 +20,7 @@ from .chromosome import Chromosome, random_chromosome, savings_chromosome, copy_
 from .fitness import evaluate, compare_fitness
 from .operators import crossover, mutate, repair
 from .local_search import apply_local_search
+from src.messaging.kafka_convergence import emit_convergence_step
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,17 @@ class HGA:
                 "elapsed_sec": elapsed,
             }
             self.convergence_log.append(log_entry)
+
+            try:
+                emit_convergence_step(
+                    generation=gen,
+                    best_fitness=self.best_fitness,
+                    avg_fitness=float(np.mean(fitnesses)),
+                    feasible_count=int(log_entry["feasible_count"]),
+                    elapsed_sec=float(elapsed),
+                )
+            except Exception:
+                pass
 
             if gen % 50 == 0 or gen == self.generations - 1:
                 logger.info(

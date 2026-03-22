@@ -2,12 +2,12 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useMonitoring } from "../context/MonitoringContext.jsx";
 import { RouteMap } from "./RouteMap.jsx";
 import { AlertFeed } from "./AlertFeed.jsx";
-import { formatDayHour, formatSimClock24, clamp01 } from "../utils/timeFormat.js";
+import { formatDayHour, formatSimTimelineClock, clamp01 } from "../utils/timeFormat.js";
 
 export function MonitoringView() {
   const { state, dispatch, startMonitor, stopMonitor, requestReplan, injectTraffic, API_BASE } =
     useMonitoring();
-  const [speedX, setSpeedX] = useState(60);
+  const [speedX, setSpeedX] = useState(15);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [mapCtx, setMapCtx] = useState(null);
@@ -15,8 +15,12 @@ export function MonitoringView() {
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [ctxRefresh, setCtxRefresh] = useState(0);
   const ctxBoostedRef = useRef(false);
+  const anchorSimRef = useRef(0);
+  const anchorWallRef = useRef(Date.now());
+  const [displayH, setDisplayH] = useState(0);
 
   const rid = state.monitorRunId;
+  const replaySpeed = state.replaySpeedX ?? 60;
   const atRisk = {};
   for (const a of state.alerts) {
     if (a.type === "stockout_risk" && a.customer_id != null) {
@@ -74,6 +78,26 @@ export function MonitoringView() {
   }, [rid, mapCtx, state.telemetry]);
 
   useEffect(() => {
+    anchorSimRef.current = Number(state.simTimeH) || 0;
+    anchorWallRef.current = Date.now();
+  }, [state.simTimeH]);
+
+  useEffect(() => {
+    if (state.monitoringState !== "simulating") {
+      setDisplayH(Number(state.simTimeH) || 0);
+      return undefined;
+    }
+    const rafRef = { id: 0 };
+    const tick = () => {
+      const dtSec = (Date.now() - anchorWallRef.current) / 1000;
+      setDisplayH(anchorSimRef.current + dtSec * (replaySpeed / 60));
+      rafRef.id = requestAnimationFrame(tick);
+    };
+    rafRef.id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.id);
+  }, [state.monitoringState, replaySpeed, state.simTimeH]);
+
+  useEffect(() => {
     if (state.monitoringState !== "simulating" || state.replayStartedAtMs == null) return undefined;
     const id = setInterval(() => setWallNow(Date.now()), 300);
     return () => clearInterval(id);
@@ -94,22 +118,56 @@ export function MonitoringView() {
   }, [wallElapsedSec]);
 
   const etaRows = Object.entries(state.telemetry)
-    .filter(([, p]) => p.next_customer_id > 0 && p.status !== "done")
-    .map(([vid, p]) => ({
-      vid,
-      stop: p.next_customer_id,
-      plan: p.planned_arrival_h,
-      eta: p.eta_h,
-      spd: p.speed_kmh_sim,
-      bad: state.violatedVehicles[vid],
-    }));
+    .map(([vid, p]) => {
+      if (p.status === "done") {
+        return {
+          vid,
+          done: true,
+          depot: false,
+          stop: null,
+          plan: p.planned_arrival_h,
+          eta: p.eta_h,
+          spd: p.speed_kmh_sim,
+          bad: state.violatedVehicles[vid],
+        };
+      }
+      if (p.next_customer_id > 0) {
+        return {
+          vid,
+          done: false,
+          depot: false,
+          stop: p.next_customer_id,
+          plan: p.planned_arrival_h,
+          eta: p.eta_h,
+          spd: p.speed_kmh_sim,
+          bad: state.violatedVehicles[vid],
+        };
+      }
+      if (p.status === "en_route" && p.next_customer_id === 0) {
+        return {
+          vid,
+          done: false,
+          depot: true,
+          stop: null,
+          plan: p.planned_arrival_h,
+          eta: p.eta_h,
+          spd: p.speed_kmh_sim,
+          bad: state.violatedVehicles[vid],
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
 
   const win = mapCtx?.day_window_h || { start: 6, end: 20 };
-  const span = Math.max(0.25, Number(win.end) - Number(win.start));
+  const winStart = Number(win.start);
+  const winEnd = Number(win.end);
   const simH = Number(state.simTimeH);
-  const simHBar = Number.isFinite(simH) ? Math.min(24, Math.max(0, simH)) : 0;
-  const tickPct = clamp01((simHBar - Number(win.start)) / span) * 100;
-  const dayPct = clamp01(simHBar / 24) * 100;
+  const hi = Math.max(winEnd, displayH);
+  const effSpan = Math.max(0.25, hi - winStart);
+  const tickPct = clamp01((displayH - winStart) / effSpan) * 100;
+  const dayDen = Math.max(24, winEnd + 1, displayH + 1e-3);
+  const dayPct = clamp01(displayH / dayDen) * 100;
 
   const onStart = async () => {
     if (!rid) return;
@@ -144,7 +202,7 @@ export function MonitoringView() {
     );
   }
 
-  const nCust = mapCtx?.customers?.length ?? 0;
+  const nCustDay = mapCtx?.customer_ids_on_day?.length ?? 0;
   const nRoutes = mapCtx?.planned_routes?.length ?? 0;
   const cooldownOn = Date.now() < state.replanCooldownUntilMs;
   const replanBusy = state.monitoringState === "replanning";
@@ -189,7 +247,11 @@ export function MonitoringView() {
         <label style={{ marginLeft: 12 }}>
           Tốc độ{" "}
           <select value={speedX} onChange={(e) => setSpeedX(+e.target.value)} disabled={state.monitoringState === "simulating"}>
+            <option value={10}>10×</option>
+            <option value={15}>15×</option>
+            <option value={20}>20×</option>
             <option value={30}>30×</option>
+            <option value={45}>45×</option>
             <option value={60}>60×</option>
             <option value={120}>120×</option>
           </select>
@@ -260,7 +322,7 @@ export function MonitoringView() {
           Trạng thái: <strong>{state.monitoringState}</strong>
           {state.monitoringState === "simulating" && (
             <span style={{ color: "#666", marginLeft: 8 }}>
-              (60× = 1 giờ mô phỏng / 1 giây thực; đồng hồ và thanh thời gian dùng cùng <code>sim_time_h</code> từ backend)
+              (Tốc độ lần này: <strong>{replaySpeed}×</strong> = {replaySpeed}/60 giờ mô phỏng mỗi giây thực — đồng hồ/thanh nội suy khớp tốc độ đã gửi API)
             </span>
           )}
         </span>
@@ -281,9 +343,10 @@ export function MonitoringView() {
             <span style={{ color: "#666" }}>Đang chờ bước đầu từ replay (đã bấm Start?)…</span>
           ) : (
             <>
-              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 18 }}>{formatDayHour(simHBar)}</span>
+              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 18 }}>{formatDayHour(displayH)}</span>
               <span style={{ color: "#666", marginLeft: 10, fontSize: 13 }}>
-                ({Number.isFinite(simH) ? simH.toFixed(2) : "—"} h — raw từ replay; nhiều xe phát tuần tự thì mốc có thể &gt; 24)
+                (telemetry <code>sim_time_h</code>: {Number.isFinite(simH) ? simH.toFixed(2) : "—"} h · hiển thị mượt:{" "}
+                {Number.isFinite(displayH) ? displayH.toFixed(2) : "—"} h)
               </span>
             </>
           )}
@@ -311,16 +374,16 @@ export function MonitoringView() {
           }}
         >
           <div>
-            <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>Đồng hồ ngày mô phỏng (00:00 – 23:59)</div>
-            <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 28, fontWeight: 700, letterSpacing: 2, color: "#0d47a1" }}>
-              {formatSimClock24(simHBar)}
+            <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>Đồng hồ timeline (có thể &gt; 24h nếu nhiều xe nối tiếp)</div>
+            <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 28, fontWeight: 700, letterSpacing: 1, color: "#0d47a1" }}>
+              {formatSimTimelineClock(displayH)}
             </div>
             <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-              Cùng nguồn với thanh “cửa sổ gợi ý” phía dưới (clamp 0–24h trên mặt đồng hồ).
+              Nội suy giữa hai bước telemetry theo <strong>{replaySpeed}×</strong> (trùng <code>speed_x</code> POST /monitor/start).
             </div>
           </div>
           <div style={{ flex: "1 1 220px", minWidth: 200 }}>
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>Tiến độ cả ngày (0h → 24h)</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>Tiến độ (trục kéo dài theo mốc hiện tại)</div>
             <div style={{ position: "relative", height: 8, background: "#eceff1", borderRadius: 4 }}>
               <div
                 style={{
@@ -396,9 +459,8 @@ export function MonitoringView() {
             border: "1px solid #e0e0e0",
           }}
         >
-          <strong>Chú thích bản đồ</strong> — Ngày {state.selectedDay}: <strong>{nCust}</strong> điểm khách (nhãn Cx; viền cam = có giao trong ngày),{" "}
-          depot nhãn <strong>DEPOT</strong>, <strong>{nRoutes}</strong> tuyến kế hoạch (nét đứt / OSRM nếu API trả hình học), xe đỏ
-          theo replay; vệt mờ = đã đi. Nếu đường vẫn gần như thẳng, OSRM có thể lỗi hoặc bị giới hạn — xem log server.
+          <strong>Chú thích bản đồ</strong> — Ngày {state.selectedDay}: <strong>{nCustDay}</strong> khách có giao (chỉ hiện trên bản đồ),{" "}
+          depot <strong>DEPOT</strong>, <strong>{nRoutes}</strong> tuyến; replay tuần tự từng xe — xe chưa tới lượt ở depot (marker “chờ”). Khi replay: tuyến kế hoạch chỉ vẽ tới vị trí xe hiện tại.
         </div>
       )}
 
@@ -441,9 +503,25 @@ export function MonitoringView() {
             </thead>
             <tbody>
               {etaRows.map((r) => (
-                <tr key={r.vid} style={{ background: r.bad ? "#ffebee" : undefined }}>
-                  <td>V{r.vid}</td>
-                  <td>C{r.stop}</td>
+                <tr
+                  key={r.vid}
+                  style={{
+                    background: r.bad ? "#ffebee" : r.done ? "#e8f5e9" : undefined,
+                  }}
+                >
+                  <td>
+                    V{r.vid}
+                    {r.done ? <span style={{ color: "#2e7d32", marginLeft: 4 }}>✓</span> : null}
+                  </td>
+                  <td>
+                    {r.done ? (
+                      <span style={{ color: "#2e7d32" }}>Hoàn thành</span>
+                    ) : r.depot ? (
+                      "→ Depot"
+                    ) : (
+                      `C${r.stop}`
+                    )}
+                  </td>
                   <td>
                     <span style={{ fontFamily: "ui-monospace, monospace" }}>{formatDayHour(r.plan)}</span>
                     <span style={{ color: "#888", fontSize: 10 }}> ({Number(r.plan).toFixed(2)}h)</span>
@@ -476,6 +554,7 @@ export function MonitoringView() {
           trails={state.trails}
           planRevision={state.planRevision}
           activeCustomerIds={mapCtx?.customer_ids_on_day ?? []}
+          replayMode={state.monitoringState === "simulating"}
         />
       </section>
 

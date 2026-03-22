@@ -22,6 +22,7 @@ const initialState = {
   trafficSource: null,
   trafficUpdatedAt: null,
   replayStartedAtMs: null,
+  replaySpeedX: 60,
 };
 
 function reducer(state, action) {
@@ -59,6 +60,7 @@ function reducer(state, action) {
         trafficSource: null,
         trafficUpdatedAt: null,
         replayStartedAtMs: null,
+        replaySpeedX: 60,
       };
     case "MONITOR_STOP_LOCAL":
       return {
@@ -77,6 +79,8 @@ function reducer(state, action) {
         violatedVehicles: {},
         simTimeH: 0,
         preReplanMonitoringState: null,
+        replayStartedAtMs: typeof action.startedAtMs === "number" ? action.startedAtMs : null,
+        replaySpeedX: typeof action.speedX === "number" && action.speedX > 0 ? action.speedX : 60,
       };
     case "WS_MESSAGE": {
       const m = action.payload;
@@ -199,7 +203,8 @@ export function MonitoringProvider({ children }) {
       body: JSON.stringify({ run_id: runId, day, speed_x: speedX }),
     });
     if (!r.ok) throw new Error(await r.text());
-    dispatch({ type: "MON_API_STARTED" });
+    const sx = typeof speedX === "number" && speedX > 0 ? speedX : 60;
+    dispatch({ type: "MON_API_STARTED", startedAtMs: Date.now(), speedX: sx });
     return r.json();
   }, []);
 

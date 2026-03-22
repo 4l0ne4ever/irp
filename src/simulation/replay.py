@@ -87,13 +87,19 @@ def _emit_telemetry_step(
 
 def _sleep_cancellable(seconds: float, stop_event: Optional[threading.Event]) -> bool:
     """Sleep up to `seconds` real seconds; return True if cancelled via stop_event."""
-    if seconds <= 0:
+    try:
+        sec = float(seconds)
+    except (TypeError, ValueError):
         return bool(stop_event and stop_event.is_set())
-    end = time.monotonic() + seconds
+    if sec <= 0 or sec != sec:  # 0, negative, or NaN
+        return bool(stop_event and stop_event.is_set())
+    end = time.monotonic() + sec
     while time.monotonic() < end:
         if stop_event and stop_event.is_set():
             return True
-        remaining = end - time.monotonic()
+        remaining = max(0.0, end - time.monotonic())
+        if remaining <= 0:
+            break
         time.sleep(min(0.05, remaining))
     return bool(stop_event and stop_event.is_set())
 
@@ -270,8 +276,8 @@ def _replay_route(
         points = waypoints_for_leg(inst.coords, prev_idx, cust_1b, stop_event)
         duration_h = max(1e-6, arrival_h - prev_time)
         real_dt = duration_h / max(hours_per_real_second, 1e-6)
-        n_steps = max(1, steps_per_leg)
-        step_sleep = real_dt / n_steps
+        n_steps = max(1, int(steps_per_leg))
+        step_sleep = max(0.0, real_dt / n_steps)
 
         for s in range(n_steps + 1):
             if stop_event and stop_event.is_set():
@@ -311,11 +317,12 @@ def _replay_route(
     depot_points = waypoints_for_leg(inst.coords, prev_idx, 0, stop_event)
     duration_h = max(1e-6, 0.5)
     real_dt = duration_h / max(hours_per_real_second, 1e-6)
-    step_sleep = real_dt / max(steps_per_leg, 1)
-    for s in range(steps_per_leg + 1):
+    n_dep = max(1, int(steps_per_leg))
+    step_sleep = max(0.0, real_dt / n_dep)
+    for s in range(n_dep + 1):
         if stop_event and stop_event.is_set():
             return True
-        frac = s / float(steps_per_leg)
+        frac = s / float(n_dep)
         lat, lon = _interpolate_latlon(depot_points, frac)
         st = prev_time + duration_h * frac
         rest_d = _merge_telemetry_rest(
@@ -340,7 +347,7 @@ def _replay_route(
             sim_time_h_display=st + sim_time_offset,
             timeline_cap=timeline_cap,
         )
-        if s < steps_per_leg and _sleep_cancellable(step_sleep, stop_event):
+        if s < n_dep and _sleep_cancellable(step_sleep, stop_event):
             return True
 
     rest_done = _merge_telemetry_rest(
@@ -438,8 +445,8 @@ def _replay_route_adaptive(
                 arrival_sim = ew
 
         real_dt = duration_h / max(hours_per_real_second, 1e-6)
-        n_steps = max(1, steps_per_leg)
-        step_sleep = real_dt / n_steps
+        n_steps = max(1, int(steps_per_leg))
+        step_sleep = max(0.0, real_dt / n_steps)
 
         for s in range(n_steps + 1):
             if stop_event and stop_event.is_set():
@@ -492,8 +499,8 @@ def _replay_route_adaptive(
     dist_d = float(inst.dist[prev_idx, 0])
     duration_h = max(1e-6, igp_travel_time(dist_d, prev_time) * _clamp_factor(get_factor(prev_time)))
     real_dt = duration_h / max(hours_per_real_second, 1e-6)
-    n_steps = max(1, steps_per_leg)
-    step_sleep = real_dt / n_steps
+    n_steps = max(1, int(steps_per_leg))
+    step_sleep = max(0.0, real_dt / n_steps)
     depart = prev_time
     arrival_depot = depart + duration_h
 
